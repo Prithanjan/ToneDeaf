@@ -39,7 +39,7 @@ class FrameRejected(Exception):
     them without them ever landing in a formatted log string.
     """
 
-    __slots__ = ("code", "expected", "actual")
+    __slots__ = ("actual", "code", "expected")
 
     def __init__(self, code: FrameError, *, expected: int | None = None, actual: int | None = None):
         super().__init__(code.value)
@@ -57,7 +57,9 @@ class Frame:
 
     def __post_init__(self) -> None:
         if len(self.pcm) != SAMPLES_PER_FRAME * 2:
-            raise FrameRejected(FrameError.FRAME_SIZE, expected=SAMPLES_PER_FRAME * 2, actual=len(self.pcm))
+            raise FrameRejected(
+                FrameError.FRAME_SIZE, expected=SAMPLES_PER_FRAME * 2, actual=len(self.pcm)
+            )
 
 
 def parse_frame(data: bytes | bytearray | memoryview) -> Frame:

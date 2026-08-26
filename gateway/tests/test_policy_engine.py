@@ -104,7 +104,7 @@ class TestEvidenceBar:
 
     @pytest.mark.parametrize("k", [0, 1, -1])
     def test_k_below_two_is_refused_at_construction(self, k: int) -> None:
-        """"Lower k to 1 so the demo triggers faster" is refused before any audio arrives."""
+        """ "Lower k to 1 so the demo triggers faster" is refused before any audio arrives."""
         with pytest.raises(ValueError, match="one high window may never decide"):
             PolicyThresholds(high_window_risk=0.78, evidence_k=k, evidence_n=5)
 
@@ -284,8 +284,10 @@ class TestReplay:
 
 class TestPolicyLoader:
     def test_loads_committed_policy_bundle(self) -> None:
-        from app.policy.loader import load_policy
         from pathlib import Path
+
+        from app.policy.loader import load_policy
+
         policy = load_policy(
             Path("policy/policy.yaml"),
             calibration_path=Path("policy/calibration.json"),
@@ -296,8 +298,10 @@ class TestPolicyLoader:
         assert policy.thresholds.evidence_n == 5
 
     def test_fails_closed_when_model_version_is_missing(self, tmp_path: Path) -> None:
-        import yaml
         from pathlib import Path
+
+        import yaml
+
         from app.policy.loader import PolicyLoadError, load_policy
 
         policy_bytes = Path("policy/policy.yaml").read_bytes()
@@ -311,8 +315,10 @@ class TestPolicyLoader:
             load_policy(bad_policy, calibration_path=Path("policy/calibration.json"))
 
     def test_fails_closed_when_model_version_mismatches(self, tmp_path: Path) -> None:
-        import yaml
         from pathlib import Path
+
+        import yaml
+
         from app.policy.loader import PolicyLoadError, load_policy
 
         policy_bytes = Path("policy/policy.yaml").read_bytes()
@@ -324,4 +330,3 @@ class TestPolicyLoader:
 
         with pytest.raises(PolicyLoadError, match="does not match the calibration artifact"):
             load_policy(bad_policy, calibration_path=Path("policy/calibration.json"))
-

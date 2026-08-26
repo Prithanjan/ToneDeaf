@@ -110,9 +110,9 @@ class TestExactPins:
         shared = set(scorer) & set(gateway)
         assert {"grpcio", "protobuf", "numpy"} <= shared
         for name in sorted(shared):
-            assert (
-                scorer[name] == gateway[name]
-            ), f"{name} is pinned to {scorer[name]} in the Scorer and {gateway[name]} in the Gateway"
+            assert scorer[name] == gateway[name], (
+                f"{name} is pinned to {scorer[name]} in the Scorer and {gateway[name]} in the Gateway"
+            )
 
     def test_onnxruntime_is_absent_from_the_runtime_requirements(self) -> None:
         """The tier switch lives in ONE place: the Dockerfile's ``ORT_PACKAGE`` argument.
@@ -169,9 +169,9 @@ class TestDockerfileTierSwitch:
             line for line in text.splitlines() if "pip install" in line and "onnxruntime" in line
         ]
         for line in installs:
-            assert (
-                "${ORT_VERSION}" in line
-            ), f"hard-coded ORT version in an install step: {line.strip()}"
+            assert "${ORT_VERSION}" in line, (
+                f"hard-coded ORT version in an install step: {line.strip()}"
+            )
 
     def test_both_variants_resolve_to_the_same_version(self) -> None:
         """The one dependency difference is the PACKAGE NAME, never the version.
@@ -318,9 +318,9 @@ class TestRuntimeLayerIsMinimal:
         for source in re.findall(r"^COPY (?:--\S+ )*(\S+)", text, re.MULTILINE):
             if source.startswith(("/", "$")):
                 continue
-            assert source.startswith(
-                ("scorer/", "contracts/", "ml/")
-            ), f"COPY source {source!r} is not repo-root-relative"
+            assert source.startswith(("scorer/", "contracts/", "ml/")), (
+                f"COPY source {source!r} is not repo-root-relative"
+            )
 
 
 class TestHealthcheckExercisesTheRpc:
@@ -339,9 +339,9 @@ class TestHealthcheckExercisesTheRpc:
         assert '"--healthcheck"' in text
         instructions = "\n".join(_instructions(text))
         for probe in ("nc -z", "curl", "/dev/tcp", "netstat", "socket.connect"):
-            assert (
-                probe not in instructions
-            ), f"the healthcheck degenerated into a port probe ({probe})"
+            assert probe not in instructions, (
+                f"the healthcheck degenerated into a port probe ({probe})"
+            )
 
     def test_healthcheck_uses_exec_form(self) -> None:
         """Prevents a shell wrapper swallowing the exit status of the actual check."""
@@ -478,9 +478,9 @@ class TestToolingConfigMirrorsTheGateway:
             )
         )
         assert {"contract", "privacy", "parity", "integration"} <= scorer_markers
-        assert (
-            scorer_markers <= gateway_markers
-        ), f"markers declared here but not in the Gateway: {sorted(scorer_markers - gateway_markers)}"
+        assert scorer_markers <= gateway_markers, (
+            f"markers declared here but not in the Gateway: {sorted(scorer_markers - gateway_markers)}"
+        )
 
     def test_strict_markers_and_strict_config_are_on(self) -> None:
         """Prevents a typo'd marker silently selecting nothing.
@@ -528,9 +528,9 @@ class TestGeneratedStubsAreCommitted:
             gateway_stub = REPO_ROOT / "gateway" / "app" / "scorer" / name
             if not scorer_stub.is_file() or not gateway_stub.is_file():
                 pytest.skip("stubs not generated; run scripts/gen_proto.sh")
-            assert (
-                scorer_stub.read_bytes() == gateway_stub.read_bytes()
-            ), f"{name} differs between the two services"
+            assert scorer_stub.read_bytes() == gateway_stub.read_bytes(), (
+                f"{name} differs between the two services"
+            )
 
     def test_the_grpc_stub_imports_the_pb2_module_relatively(self) -> None:
         """protoc emits a top-level absolute import that is wrong for both destination packages.
@@ -567,9 +567,9 @@ class TestGeneratedStubsAreCommitted:
             if "PROTO_DIR" not in line and "PROTO_FILE" not in line:
                 continue
             for write in (">", ">>", "sed -i", "tee ", "rm "):
-                assert (
-                    write not in line
-                ), f"gen_proto writes to the contract directory: {line.strip()}"
+                assert write not in line, (
+                    f"gen_proto writes to the contract directory: {line.strip()}"
+                )
 
     def test_gen_proto_is_idempotent_by_construction(self) -> None:
         """CI asserts ``git diff --exit-code`` after a run, so a second run must be a no-op.

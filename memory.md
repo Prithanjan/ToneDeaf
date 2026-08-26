@@ -1592,6 +1592,12 @@ and finding that the highest-value defects live in what a control does not ask.*
 - **Fixed BUG-13**: Replaced naive individual row deletion in `gateway/app/audit/writer.py::delete_expired` with whole-session-atomic deletion query.
 - **Fixed BUG-9**: Aligned `MODEL_PATH` in `infra/cdk/lib/compute-stack.ts` to `/models/aasist.onnx`.
 - **Verified all component suites**: Gateway (330 passed), Scorer (309 passed), Audit unit (477 passed, 12 integration deselected). Total 1116 tests passing clean.
+- **Fixed GitHub Actions CI Workflows & Runtime Mismatches**:
+  - Upgraded action versions to major channels (`checkout@v4`, `setup-python@v5`, `setup-node@v4`, `upload-artifact@v4`) ensuring Node 24 runner runtime compatibility.
+  - Aligned `pwa-ci.yml` Node version to `"22"` and eliminated brittle cache subpaths.
+  - Fixed `secret-scan.yml` placeholder allow-list markers and `.env.example` exclusion; verified `0 findings` across 195 repo files.
+  - Fixed `contract-check.yml` (C-01..C-05) path resolution and schema wording; verified all static contract checks pass.
+  - Fixed `ruff` formatting and `mypy` strict typing overrides across `gateway` and `scorer`; 100% clean.
 
 ---
 

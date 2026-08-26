@@ -7,6 +7,7 @@ invariants (rules.md R-03, R-15, R-53).
 from __future__ import annotations
 
 import dataclasses
+
 import pytest
 
 from app.telemetry.metrics import (

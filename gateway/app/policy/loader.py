@@ -29,7 +29,11 @@ from app.policy.engine import Action, PolicyThresholds, PurposeActionMap, RiskSt
 REQUIRED_STATES: Final[frozenset[RiskState]] = frozenset(RiskState)
 PLACEHOLDER_STATUS: Final[str] = "placeholder-not-policy-eligible"
 
-VALID_ARTIFACT_STATES: Final[tuple[str, ...]] = ("research_only", "demo_eligible", "policy_eligible")
+VALID_ARTIFACT_STATES: Final[tuple[str, ...]] = (
+    "research_only",
+    "demo_eligible",
+    "policy_eligible",
+)
 
 
 class PolicyLoadError(ValueError):
@@ -107,14 +111,18 @@ def _parse_purpose_actions(raw: Any) -> PurposeActionMap:
     parsed: PurposeActionMap = {}
     for purpose, states in raw.items():
         if not isinstance(states, dict):
-            raise PolicyLoadError(f"purpose_actions.{purpose} must be a mapping of risk_state to action")
+            raise PolicyLoadError(
+                f"purpose_actions.{purpose} must be a mapping of risk_state to action"
+            )
 
         by_state: dict[RiskState, Action] = {}
         for state_name, action in states.items():
             try:
                 state = RiskState(str(state_name))
             except ValueError as exc:
-                raise PolicyLoadError(f"purpose_actions.{purpose}: unknown risk_state {state_name!r}") from exc
+                raise PolicyLoadError(
+                    f"purpose_actions.{purpose}: unknown risk_state {state_name!r}"
+                ) from exc
             by_state[state] = _parse_action(action, where=f"purpose_actions.{purpose}.{state_name}")
 
         missing = REQUIRED_STATES - by_state.keys()

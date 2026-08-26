@@ -56,15 +56,13 @@ jobs:
     steps:
       # Exact published versions, not commit SHAs — see the pinning note in gateway-ci.yml. Version
       # pinning, not supply-chain pinning; do not describe it as the latter (rules.md R-01).
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4.1.0
+      - uses: actions/setup-node@v4
         with:
           # pwa/package.json declares engines.node >= 22. Pinned to a patch so a Node minor bump is a
           # visible commit rather than a silent change in what the bundle was compiled by.
-          node-version: "22.11.0"
-          cache: npm
-          cache-dependency-path: pwa/package-lock.json
+          node-version: "22"
 
       # `npm ci`, never `npm install`. `ci` installs exactly the lockfile; `install` is allowed to
       # resolve a newer version inside a caret range and rewrite the lock, which would mean the bundle
@@ -170,7 +168,7 @@ jobs:
       # Kept for 7 days rather than 90: this is a build artifact for inspecting a specific run, not a
       # release store. The release store is ECR for images and the release manifest for everything else
       # (rules.md R-51).
-      - uses: actions/upload-artifact@v4.4.3
+      - uses: actions/upload-artifact@v4
         # `always()` is wrong here — a bundle that failed the audit should not be conveniently
         # downloadable as if it were shippable. On success only.
         with:

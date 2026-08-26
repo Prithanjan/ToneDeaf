@@ -8,7 +8,7 @@ a checksum, not evidence.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -55,7 +55,7 @@ class TestFieldSet:
         baseline = event_hash(TEST_CHAIN_KEY, event, GENESIS_PREV_HASH)
         with_retention = event_hash(
             TEST_CHAIN_KEY,
-            {**event, "retention_expires_at": datetime(2030, 1, 1, tzinfo=timezone.utc)},
+            {**event, "retention_expires_at": datetime(2030, 1, 1, tzinfo=UTC)},
             GENESIS_PREV_HASH,
         )
         assert baseline == with_retention
@@ -139,7 +139,7 @@ class TestCanonicalization:
             canonicalize({**audit_event(1), "occurred_at": datetime(2026, 8, 26, 12, 0, 0)})
 
     def test_equivalent_timestamps_in_different_zones_hash_identically(self) -> None:
-        utc = datetime(2026, 8, 26, 12, 0, 0, tzinfo=timezone.utc)
+        utc = datetime(2026, 8, 26, 12, 0, 0, tzinfo=UTC)
         ist = utc.astimezone(timezone(timedelta(hours=5, minutes=30)))
         assert canonicalize({**audit_event(1), "occurred_at": utc}) == canonicalize(
             {**audit_event(1), "occurred_at": ist}
@@ -173,7 +173,7 @@ class TestCanonicalization:
 
 class TestChaining:
     def test_first_event_chains_from_genesis(self) -> None:
-        (prev, _), = chain_events(TEST_CHAIN_KEY, [audit_event(1)])
+        ((prev, _),) = chain_events(TEST_CHAIN_KEY, [audit_event(1)])
         assert prev == GENESIS_PREV_HASH
         assert len(GENESIS_PREV_HASH) == 32
 
@@ -251,7 +251,9 @@ class TestVerification:
     def test_appended_forged_row_is_caught(self) -> None:
         rows = stored([audit_event(i) for i in range(1, 6)])
         forged = audit_event(6, action="continue")
-        rows.append({**forged, "prev_event_hash": rows[-1]["event_hash"], "event_hash": b"\x11" * 32})
+        rows.append(
+            {**forged, "prev_event_hash": rows[-1]["event_hash"], "event_hash": b"\x11" * 32}
+        )
         result = verify_chain(TEST_CHAIN_KEY, rows)
         assert not result.ok
         assert result.first_bad_index == 5
@@ -282,7 +284,7 @@ class TestVerification:
         """Rewriting retention_expires_at during a retention sweep must leave the chain intact."""
         rows = stored([audit_event(i) for i in range(1, 6)])
         for row in rows:
-            row["retention_expires_at"] = datetime(2031, 1, 1, tzinfo=timezone.utc)
+            row["retention_expires_at"] = datetime(2031, 1, 1, tzinfo=UTC)
         assert verify_chain(TEST_CHAIN_KEY, rows).ok
 
     def test_terminal_hash_anchor_detects_tail_truncation(self) -> None:

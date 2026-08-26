@@ -23,9 +23,10 @@ read the bound purpose from.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Callable, Final
+from datetime import UTC, datetime, timedelta
+from typing import Final
 from uuid import UUID, uuid4
 
 #: A session must be opened, ticketed, and streamed within this window. Long enough for a human to
@@ -79,12 +80,12 @@ class SessionRecord:
 class SessionRegistry:
     """Create, look up, and expire session records."""
 
-    __slots__ = ("_records", "_clock", "_ttl", "_max_sessions")
+    __slots__ = ("_clock", "_max_sessions", "_records", "_ttl")
 
     def __init__(
         self,
         *,
-        clock: Callable[[], datetime] = lambda: datetime.now(tz=timezone.utc),
+        clock: Callable[[], datetime] = lambda: datetime.now(tz=UTC),
         ttl_seconds: int = SESSION_TTL_SECONDS,
         max_sessions: int = 256,
     ):

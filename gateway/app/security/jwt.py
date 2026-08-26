@@ -65,14 +65,14 @@ class JwksCache:
     nor a sleep.
     """
 
-    __slots__ = ("_url", "_client", "_clock", "_keys", "_fetched_at", "_last_attempt")
+    __slots__ = ("_client", "_clock", "_fetched_at", "_keys", "_last_attempt", "_url")
 
     def __init__(
         self,
         jwks_url: str,
         *,
         client: httpx.AsyncClient | None = None,
-        clock: "Any" = time.monotonic,
+        clock: Any = time.monotonic,
     ):
         self._url = jwks_url
         self._client = client
@@ -121,7 +121,7 @@ class JwksCache:
 class TokenValidator:
     """Validates bearer tokens against one issuer. Constructed once per process."""
 
-    __slots__ = ("_issuer", "_audience", "_jwks", "_leeway")
+    __slots__ = ("_audience", "_issuer", "_jwks", "_leeway")
 
     def __init__(self, *, issuer: str, audience: str, jwks: JwksCache, leeway_seconds: int = 30):
         self._issuer = issuer

@@ -55,14 +55,16 @@ async def healthz() -> Response:
 
 
 @router.get("/readyz", response_model=ReadinessReport)
-async def readyz(request: Request, response: Response, settings: CurrentSettings) -> ReadinessReport:
+async def readyz(
+    request: Request, response: Response, settings: CurrentSettings
+) -> ReadinessReport:
     state = request.app.state
 
     database = False
     try:
         await state.pool.fetchval("SELECT 1")
         database = True
-    except Exception:  # noqa: BLE001 - any failure means not ready; the reason is already logged
+    except Exception:
         database = False
 
     scorer_ready = False
@@ -71,7 +73,9 @@ async def readyz(request: Request, response: Response, settings: CurrentSettings
         # The provider check is part of readiness, not a warning. A silent CPU fallback on the GPU
         # tier is a failure, not a degradation (rules.md R-45) — serving traffic from it would attach
         # GPU-tier latency claims to CPU-tier measurements.
-        scorer_ready = health.ready and health.execution_provider == settings.execution_provider.value
+        scorer_ready = (
+            health.ready and health.execution_provider == settings.execution_provider.value
+        )
     except ScorerUnavailable:
         scorer_ready = False
 
@@ -88,7 +92,9 @@ async def readyz(request: Request, response: Response, settings: CurrentSettings
 
 
 @router.get("/api/v1/version", response_model=VersionInfo)
-async def version(request: Request, settings: CurrentSettings, policy: CurrentPolicy) -> VersionInfo:
+async def version(
+    request: Request, settings: CurrentSettings, policy: CurrentPolicy
+) -> VersionInfo:
     state = request.app.state
 
     # Read from the Scorer rather than from local config: the point of this endpoint is to report

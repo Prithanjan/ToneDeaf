@@ -62,10 +62,19 @@ SCORER_WAIT_SECONDS = 120
 
 def _hash_contract(key: str) -> str:
     path = _CONTRACT_PATHS[key]
-    try:
-        return sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return "unavailable"
+    candidates = [
+        path,
+        Path("..") / path,
+        Path(__file__).resolve().parent.parent.parent / path,
+        Path("/") / path,
+    ]
+    for c in candidates:
+        try:
+            if c.is_file():
+                return sha256(c.read_bytes()).hexdigest()
+        except OSError:
+            continue
+    return "unavailable"
 
 
 async def _wait_for_scorer(client: ScorerClient, *, timeout_s: int) -> ScorerHealth:
@@ -189,7 +198,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.replay_cache = ReplayCache(clock=lambda: int(time.time()))
     app.state.diagnostics = DiagnosticsSidecar(enabled=False)  # decision D-12
     app.state.audit = AuditWriter(
-        pool, chain_key=settings.audit_chain_key.get_secret_value().encode("utf-8"),
+        pool,
+        chain_key=settings.audit_chain_key.get_secret_value().encode("utf-8"),
         retention_days=settings.audit_retention_days,
     )
     app.state.token_validator = TokenValidator(

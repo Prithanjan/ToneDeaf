@@ -63,15 +63,14 @@ jobs:
     # No AWS. No `id-token: write`, no region.
     steps:
       # Exact published versions, not commit SHAs — see the pinning note in gateway-ci.yml.
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           # 3.12 — the pinned interpreter (decision D-10). privacy_scan.py parses source with `ast`, and
           # `ast` is version-specific: a newer interpreter can parse syntax the 3.12 services cannot run,
           # and an older one raises SyntaxError on valid 3.12 code and reports it as a scan failure.
           python-version: "3.12"
-          cache: pip
           cache-dependency-path: |
             gateway/requirements-dev.txt
             scorer/requirements-dev.txt

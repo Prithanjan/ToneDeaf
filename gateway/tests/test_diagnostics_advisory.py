@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+
 import pytest
 
 from app.policy.diagnostics import DiagnosticObservation, DiagnosticsSidecar
@@ -21,7 +22,9 @@ def test_diagnostic_observation_is_immutable() -> None:
 
 def test_observation_display_payload_is_explicitly_advisory() -> None:
     """The payload shape for the UI must label itself advisory and non-decision-bearing."""
-    obs = DiagnosticObservation(window_seq=3, descriptors={"spectral_tilt": 0.12}, notes=("sample note",))
+    obs = DiagnosticObservation(
+        window_seq=3, descriptors={"spectral_tilt": 0.12}, notes=("sample note",)
+    )
     payload = obs.as_display_payload()
 
     assert payload["window_seq"] == 3

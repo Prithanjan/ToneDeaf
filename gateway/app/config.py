@@ -108,7 +108,7 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _validate(self) -> "Settings":
+    def _validate(self) -> Settings:
         aws = self.deployment_profile is DeploymentProfile.AWS_GPU
 
         if aws and self.execution_provider is not ExecutionProvider.CUDA:
@@ -152,4 +152,4 @@ def _is_test_issuer(issuer: str) -> bool:
 @functools.lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Process-wide settings. Cached so a missing variable fails once, loudly, at startup."""
-    return Settings()  # type: ignore[call-arg]  # values come from the environment
+    return Settings()  # values come from the environment

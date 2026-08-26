@@ -32,9 +32,7 @@ class TestNormalization:
         assert normalize("CALL-００１") == "CALL-001"
 
     def test_visually_identical_inputs_yield_one_pseudonym(self) -> None:
-        assert call_ref(TEST_HMAC_KEY, " CALL-００１ ") == call_ref(
-            TEST_HMAC_KEY, "CALL-001"
-        )
+        assert call_ref(TEST_HMAC_KEY, " CALL-００１ ") == call_ref(TEST_HMAC_KEY, "CALL-001")
 
     @pytest.mark.parametrize("raw", ["", "   ", "\t\n", "　"])
     def test_empty_after_normalization_is_refused(self, raw: str) -> None:
@@ -119,11 +117,11 @@ class TestShapeCheck:
     @pytest.mark.parametrize(
         "value",
         [
-            "CALL-001",                # a raw reference where a pseudonym belongs
-            "a" * 63,                  # too short
-            "a" * 65,                  # too long
-            "A" * 64,                  # uppercase hex is not what we emit
-            "g" * 64,                  # not hex
+            "CALL-001",  # a raw reference where a pseudonym belongs
+            "a" * 63,  # too short
+            "a" * 65,  # too long
+            "A" * 64,  # uppercase hex is not what we emit
+            "g" * 64,  # not hex
             "",
         ],
     )

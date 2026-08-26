@@ -38,11 +38,21 @@ def emit() -> Any:
         service="gateway", deployment_profile="local-cpu", git_commit="deadbeef"
     )
 
-    def _emit(msg: str, *args: object, extra: dict[str, Any] | None = None,
-              exc_info: Any = None, level: int = logging.INFO) -> dict[str, Any]:
+    def _emit(
+        msg: str,
+        *args: object,
+        extra: dict[str, Any] | None = None,
+        exc_info: Any = None,
+        level: int = logging.INFO,
+    ) -> dict[str, Any]:
         record = logging.LogRecord(
-            name="test", level=level, pathname=__file__, lineno=1,
-            msg=msg, args=args or None, exc_info=exc_info,
+            name="test",
+            level=level,
+            pathname=__file__,
+            lineno=1,
+            msg=msg,
+            args=args or None,
+            exc_info=exc_info,
         )
         for key, value in (extra or {}).items():
             setattr(record, key, value)
@@ -53,7 +63,7 @@ def emit() -> Any:
 
 class TestAudioNeverRendered:
     def test_bytes_in_an_allowed_field_become_a_length(self, emit: Any) -> None:
-        """"Log the payload to debug the frame parser" is the single most likely way audio escapes."""
+        """ "Log the payload to debug the frame parser" is the single most likely way audio escapes."""
         out = emit("frame", extra={"quality_flags": PCM})
         assert out["quality_flags"] == f"[{len(PCM)} bytes withheld]"
         assert "\\x01" not in json.dumps(out)
@@ -126,8 +136,21 @@ class TestStructuralAllowList:
     def test_allow_list_contains_no_free_text_field(self) -> None:
         """Every permitted key is an identifier, a version, a count, or an enum value. A key like
         "note" or "detail" would be where a caller reference eventually gets rendered."""
-        forbidden = {"note", "notes", "detail", "details", "message_detail", "raw", "input",
-                     "client_call_ref", "caller_name", "phone", "msisdn", "transcript", "audio"}
+        forbidden = {
+            "note",
+            "notes",
+            "detail",
+            "details",
+            "message_detail",
+            "raw",
+            "input",
+            "client_call_ref",
+            "caller_name",
+            "phone",
+            "msisdn",
+            "transcript",
+            "audio",
+        }
         assert not (ALLOWED_EXTRA_KEYS & forbidden)
 
     def test_call_ref_is_allowed_but_documented_as_the_pseudonym(self) -> None:

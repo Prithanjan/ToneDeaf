@@ -21,11 +21,12 @@ from __future__ import annotations
 
 import hmac
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from hashlib import sha256
-from typing import Any, Final, Mapping, Sequence
+from typing import Any, Final
 
 from app.constants import CHAIN_FIELD_SET_VERSION, GENESIS_PREV_HASH
 
@@ -117,7 +118,7 @@ def _format_timestamp(value: datetime | str) -> str:
         return value
     if value.tzinfo is None:
         raise ChainFieldError("occurred_at must be timezone-aware")
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
 
 
 def _format_risk(value: float | Decimal | str | None) -> str | None:
@@ -132,7 +133,7 @@ def _format_risk(value: float | Decimal | str | None) -> str | None:
     return f"{Decimal(str(value)):.4f}"
 
 
-def _assert_not_forbidden(names: "Sequence[str] | Mapping[str, Any]", *, context: str) -> None:
+def _assert_not_forbidden(names: Sequence[str] | Mapping[str, Any], *, context: str) -> None:
     """Reject any name containing an audio- or identity-adjacent substring (rules.md R-15).
 
     Runs BEFORE the unknown-field check, and is applied to :data:`CHAIN_FIELDS` itself at import as

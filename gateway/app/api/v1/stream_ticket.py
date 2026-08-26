@@ -37,7 +37,9 @@ class StreamTicketResponse(BaseModel):
     expires_in_seconds: int
 
 
-@router.post("/stream-ticket", status_code=status.HTTP_201_CREATED, response_model=StreamTicketResponse)
+@router.post(
+    "/stream-ticket", status_code=status.HTTP_201_CREATED, response_model=StreamTicketResponse
+)
 async def create_stream_ticket(
     body: StreamTicketRequest,
     request: Request,
@@ -58,7 +60,10 @@ async def create_stream_ticket(
         # gives the client an actionable status code instead of an opaque close frame.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"code": "SESSION_ALREADY_STREAMING", "message": "session already has a live stream"},
+            detail={
+                "code": "SESSION_ALREADY_STREAMING",
+                "message": "session already has a live stream",
+            },
         )
 
     claims = TicketClaims(

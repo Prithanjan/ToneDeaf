@@ -24,7 +24,7 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Final
 
 #: Keys permitted in the structured payload. Every one is an identifier, a version, a count, or an
@@ -97,7 +97,7 @@ def _iso_utc(epoch_seconds: float) -> str:
     ``time.strftime`` and has no millisecond directive — a mixed-precision timestamp makes log lines
     hard to correlate with the microsecond-precision ``occurred_at`` in the audit table.
     """
-    return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    return datetime.fromtimestamp(epoch_seconds, tz=UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 class RedactingJsonFormatter(logging.Formatter):
@@ -148,9 +148,28 @@ class RedactingJsonFormatter(logging.Formatter):
 
 _RESERVED: Final[frozenset[str]] = frozenset(
     {
-        "args", "asctime", "created", "exc_info", "exc_text", "filename", "funcName", "levelname",
-        "levelno", "lineno", "module", "msecs", "msg", "name", "pathname", "process",
-        "processName", "relativeCreated", "stack_info", "stacklevel", "thread", "threadName",
+        "args",
+        "asctime",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "module",
+        "msecs",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "stacklevel",
+        "thread",
+        "threadName",
         "taskName",
     }
 )

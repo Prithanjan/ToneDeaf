@@ -492,7 +492,7 @@ jobs:
       id-token: write
     environment: gpu-runtime
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Assume gh-actions-deploy-role via OIDC
         uses: aws-actions/configure-aws-credentials@v4.0.2

@@ -178,10 +178,19 @@ class ScorerRuntime:
 
 
 def _hash_proto() -> str:
-    try:
-        return sha256(_PROTO_PATH.read_bytes()).hexdigest()
-    except OSError:
-        return "unavailable"
+    candidates = [
+        _PROTO_PATH,
+        Path("..") / _PROTO_PATH,
+        Path(__file__).resolve().parent.parent.parent / _PROTO_PATH,
+        Path("/") / _PROTO_PATH,
+    ]
+    for c in candidates:
+        try:
+            if c.is_file():
+                return sha256(c.read_bytes()).hexdigest()
+        except OSError:
+            continue
+    return "unavailable"
 
 
 def _load_calibration_for(settings: ScorerSettings) -> Calibration:

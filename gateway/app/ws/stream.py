@@ -28,7 +28,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
@@ -45,7 +45,13 @@ from app.scorer.client import ScorerUnavailable
 from app.security.jwt import AuthError
 from app.security.origin import OriginDenied, check_origin
 from app.security.pseudonym import is_valid_call_ref
-from app.security.ticket import TicketClaims, TicketError, extract_from_subprotocols, peek_binding, verify
+from app.security.ticket import (
+    TicketClaims,
+    TicketError,
+    extract_from_subprotocols,
+    peek_binding,
+    verify,
+)
 from app.session_registry import SessionAlreadyStreaming, SessionError
 from app.telemetry.logging import get_logger
 from app.ws.frames import FrameRejected, check_sequence, parse_frame
@@ -117,7 +123,9 @@ async def stream(websocket: WebSocket) -> None:
     except (TicketError, OriginDenied) as exc:
         # Refuse the upgrade outright. There is no accepted socket to send a close frame on, which is
         # the correct outcome: an unauthenticated peer should never reach application code.
-        await websocket.close(code=CLOSE_CODES.get(exc.code, 1008), reason=CLOSE_REASONS.get(exc.code, ""))
+        await websocket.close(
+            code=CLOSE_CODES.get(exc.code, 1008), reason=CLOSE_REASONS.get(exc.code, "")
+        )
         return
 
     # The ticket carries the session and subject, so the session is resolved before the socket is
@@ -161,7 +169,7 @@ async def stream(websocket: WebSocket) -> None:
         pass
     except ScorerUnavailable:
         await _close(websocket, "SCORER_UNAVAILABLE")
-    except Exception:  # noqa: BLE001
+    except Exception:
         # exc_info goes through the redacting formatter, which scrubs bytes out of frame reprs.
         _log.error("stream failed", extra={"session_id": session_id}, exc_info=True)
         if websocket.client_state is WebSocketState.CONNECTED:
@@ -305,7 +313,7 @@ async def _run_session(websocket, state, record, ring, vad, counters) -> None:
             )
         )
 
-        occurred_at = datetime.now(tz=timezone.utc)
+        occurred_at = datetime.now(tz=UTC)
         await _send(
             websocket,
             {
@@ -399,7 +407,11 @@ async def _expect_session_open(websocket, record) -> None:
         raise ProtocolError("PROTO_FIRST_MESSAGE")
 
     call_ref = payload.get("call_ref")
-    if not isinstance(call_ref, str) or not is_valid_call_ref(call_ref) or call_ref != record.call_ref:
+    if (
+        not isinstance(call_ref, str)
+        or not is_valid_call_ref(call_ref)
+        or call_ref != record.call_ref
+    ):
         raise ProtocolError("PROTO_FIRST_MESSAGE")
 
     if payload.get("purpose_code") != record.purpose_code:
@@ -420,8 +432,10 @@ async def _close(websocket, code: str) -> None:
             # Fallback is "stream closed", not "rejected": the action vocabulary is banned from every
             # client-visible string (rules.md R-07), and this default is the one place a newly added
             # app code could smuggle one in before it gets a CLOSE_REASONS entry.
-            json.dumps({"type": "error", "code": code, "message": CLOSE_REASONS.get(code, "stream closed")})
+            json.dumps(
+                {"type": "error", "code": code, "message": CLOSE_REASONS.get(code, "stream closed")}
+            )
         )
-    except Exception:  # noqa: BLE001 - the peer may already be gone; the close below still matters
+    except Exception:
         pass
     await websocket.close(code=CLOSE_CODES.get(code, 1011), reason=CLOSE_REASONS.get(code, ""))

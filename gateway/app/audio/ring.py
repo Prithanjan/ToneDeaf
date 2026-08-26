@@ -54,7 +54,7 @@ class VoicedRingBuffer:
     complete two 640 ms hops.
     """
 
-    __slots__ = ("_buf", "_since_hop", "_voiced_total", "_discarded", "_emitted")
+    __slots__ = ("_buf", "_discarded", "_emitted", "_since_hop", "_voiced_total")
 
     def __init__(self) -> None:
         self._buf: deque[int] = deque(maxlen=WINDOW_SAMPLES)
@@ -65,7 +65,9 @@ class VoicedRingBuffer:
 
     # -- ingest ----------------------------------------------------------------------------------
 
-    def push(self, samples: "list[int] | memoryview | tuple[int, ...]", *, voiced: bool) -> bytes | None:
+    def push(
+        self, samples: list[int] | memoryview | tuple[int, ...], *, voiced: bool
+    ) -> bytes | None:
         """Offer one frame's samples.
 
         Args:

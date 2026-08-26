@@ -67,7 +67,5 @@ def is_valid_call_ref(value: str) -> bool:
     client-side mistake is caught before the raw value can be stored.
     """
     return (
-        isinstance(value, str)
-        and len(value) == 64
-        and all(c in "0123456789abcdef" for c in value)
+        isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
     )

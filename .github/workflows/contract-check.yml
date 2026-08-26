@@ -62,13 +62,12 @@ jobs:
     # a contract check that could assume a deploy role is a contract check that could deploy.
     steps:
       # Exact published versions, not commit SHAs. See the pinning note in gateway-ci.yml.
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           # 3.12 — the pinned interpreter, matching both service images (decision D-10).
           python-version: "3.12"
-          cache: pip
           cache-dependency-path: |
             gateway/requirements-dev.txt
             scorer/requirements-dev.txt
@@ -631,7 +630,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_compose_suite
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Bring up the local Compose tier
         run: |

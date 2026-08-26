@@ -194,7 +194,7 @@ def replay(
     thresholds: PolicyThresholds,
     purpose_code: str,
     purpose_actions: PurposeActionMap,
-    observations: "list[WindowObservation]",
+    observations: list[WindowObservation],
 ) -> list[Decision]:
     """Run a full observation sequence through a fresh engine.
 

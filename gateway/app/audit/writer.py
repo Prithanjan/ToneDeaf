@@ -17,9 +17,10 @@ Two properties the implementation is shaped around:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Mapping
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -58,7 +59,7 @@ class _SessionChain:
 class AuditWriter:
     """Writes chained, feature-only audit events."""
 
-    __slots__ = ("_pool", "_chain_key", "_retention_days", "_chains")
+    __slots__ = ("_chain_key", "_chains", "_pool", "_retention_days")
 
     def __init__(self, pool: asyncpg.Pool, *, chain_key: bytes, retention_days: int):
         self._pool = pool
@@ -136,7 +137,7 @@ class AuditWriter:
         """Drop the in-memory chain head when a stream ends. Idempotent."""
         self._chains.pop(session_id, None)
 
-    async def verify_session(self, session_id: str) -> "tuple[bool, int | None]":
+    async def verify_session(self, session_id: str) -> tuple[bool, int | None]:
         """Recompute the chain for one session from the stored rows.
 
         Backs ``GET /api/v1/sessions/{id}/audit`` and the Phase-1 tamper test. Reads the columns
@@ -160,7 +161,7 @@ class AuditWriter:
         A session is deleted only when all of its rows have expired. Deleting an individual row
         from a session breaks the survivor rows' hash chain, forging a false tamper signal.
         """
-        cutoff = now or datetime.now(tz=timezone.utc)
+        cutoff = now or datetime.now(tz=UTC)
         query = """
             WITH expired_sessions AS (
                 SELECT session_id

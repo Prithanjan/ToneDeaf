@@ -12,7 +12,7 @@ Two rules govern everything in this directory:
 from __future__ import annotations
 
 import struct
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -30,7 +30,11 @@ def make_frame(seq: int, *, fill: int = 0, payload: bytes | None = None) -> byte
     ``fill`` is written as every sample so a test can tell two frames apart by content without caring
     what the samples mean.
     """
-    body = payload if payload is not None else struct.pack(f"<{SAMPLES_PER_FRAME}h", *([fill] * SAMPLES_PER_FRAME))
+    body = (
+        payload
+        if payload is not None
+        else struct.pack(f"<{SAMPLES_PER_FRAME}h", *([fill] * SAMPLES_PER_FRAME))
+    )
     return struct.pack(SEQ_STRUCT, seq) + body
 
 
@@ -62,7 +66,7 @@ def audit_event(
         "session_id": "11111111-1111-4111-8111-111111111111",
         "call_ref": "a" * 64,
         "event_seq": event_seq,
-        "occurred_at": datetime(2026, 8, 26, 12, 0, event_seq % 60, tzinfo=timezone.utc),
+        "occurred_at": datetime(2026, 8, 26, 12, 0, event_seq % 60, tzinfo=UTC),
         "purpose_code": "payment_authorization",
         "context_value_band": "medium",
         "window_seq": event_seq,

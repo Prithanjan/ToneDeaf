@@ -13,21 +13,24 @@ going.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.deps import CurrentPolicy, CurrentPrincipal, CurrentRegistry, CurrentSettings
-from app.security.pseudonym import MAX_RAW_LENGTH, PseudonymError, call_ref as compute_call_ref
+from app.security.pseudonym import MAX_RAW_LENGTH, PseudonymError
+from app.security.pseudonym import call_ref as compute_call_ref
 from app.session_registry import SessionError
 from app.telemetry.logging import get_logger
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
 _log = get_logger(__name__)
 
-PurposeCode = Literal["payment_release", "beneficiary_change", "account_recovery", "support_enquiry"]
+PurposeCode = Literal[
+    "payment_release", "beneficiary_change", "account_recovery", "support_enquiry"
+]
 ContextValueBand = Literal["low", "medium", "high", "unspecified"]
 
 
@@ -71,11 +74,16 @@ async def create_session(
         # (rules.md R-18); this is the server-side half, so a non-PWA client cannot skip it.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"code": "CONSENT_REQUIRED", "message": "consent must be acknowledged before capture"},
+            detail={
+                "code": "CONSENT_REQUIRED",
+                "message": "consent must be acknowledged before capture",
+            },
         )
 
     try:
-        pseudonym = compute_call_ref(settings.hmac_key.get_secret_value().encode("utf-8"), body.client_call_ref)
+        pseudonym = compute_call_ref(
+            settings.hmac_key.get_secret_value().encode("utf-8"), body.client_call_ref
+        )
     except PseudonymError as exc:
         # The message from PseudonymError never contains the offending value, which is why it can be
         # returned to the client at all.
@@ -118,7 +126,7 @@ async def create_session(
         context_value_band=record.context_value_band,
         policy_version=policy.version,
         retention_days=settings.audit_retention_days,
-        expires_at=record.expires_at.astimezone(timezone.utc),
+        expires_at=record.expires_at.astimezone(UTC),
         artifact_state=policy.artifact_state,
         # Returned so the PWA does not have to infer it. While this is false the UI must not use
         # probability language for spoof_risk (rules.md R-11).

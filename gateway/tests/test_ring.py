@@ -27,7 +27,9 @@ FRAMES_PER_WINDOW = WINDOW_SAMPLES // SAMPLES_PER_FRAME
 
 
 def push_voiced(ring: VoicedRingBuffer, count: int, *, fill: int = 100) -> list[bytes]:
-    return [w for _ in range(count) if (w := ring.push(make_samples(fill), voiced=True)) is not None]
+    return [
+        w for _ in range(count) if (w := ring.push(make_samples(fill), voiced=True)) is not None
+    ]
 
 
 class TestFillBehaviour:

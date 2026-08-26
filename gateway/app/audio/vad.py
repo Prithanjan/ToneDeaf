@@ -40,7 +40,7 @@ class FrameVad:
     instance would let one caller's channel conditions influence another's gating decisions.
     """
 
-    __slots__ = ("_vad", "_aggressiveness", "_voiced", "_unvoiced")
+    __slots__ = ("_aggressiveness", "_unvoiced", "_vad", "_voiced")
 
     def __init__(self, aggressiveness: int = DEFAULT_AGGRESSIVENESS):
         if not 0 <= aggressiveness <= 3:

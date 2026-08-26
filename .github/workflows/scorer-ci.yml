@@ -65,15 +65,13 @@ jobs:
       # See the pinning note in gateway-ci.yml: these are exact published versions, not commit SHAs.
       # Resolving SHAs needs network access that was unavailable when this file was written. Phase 0
       # follow-up, and until then this is version pinning, not supply-chain pinning (rules.md R-01).
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           # Must match scorer/Dockerfile's python:3.12-slim for BOTH tiers. A CI interpreter that
           # differs from the image interpreter makes a green lint run evidence about nothing.
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: scorer/requirements-dev.txt
 
       - name: Install dev dependencies
         working-directory: scorer
@@ -105,13 +103,11 @@ jobs:
     name: unit tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5.3.0
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: scorer/requirements-dev.txt
 
       - name: Install dev dependencies
         working-directory: scorer
@@ -166,7 +162,7 @@ jobs:
       scorer_gpu_digest: ${{ steps.resolve.outputs.gpu_digest }}
       scorer_cpu_digest: ${{ steps.resolve.outputs.cpu_digest }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
 
       - name: Fail early if the deploy role variable is unset
         run: |

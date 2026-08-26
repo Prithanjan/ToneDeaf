@@ -55,7 +55,9 @@ class TestParse:
         assert parse_frame(bytearray(raw)).seq == 3
         assert parse_frame(memoryview(raw)).seq == 3
 
-    @pytest.mark.parametrize("length", [0, 1, WS_FRAME_BYTES - 1, WS_FRAME_BYTES + 1, WS_FRAME_BYTES * 2])
+    @pytest.mark.parametrize(
+        "length", [0, 1, WS_FRAME_BYTES - 1, WS_FRAME_BYTES + 1, WS_FRAME_BYTES * 2]
+    )
     def test_rejects_any_length_but_648(self, length: int) -> None:
         with pytest.raises(FrameRejected) as caught:
             parse_frame(b"\x00" * length)
@@ -95,10 +97,10 @@ class TestSequence:
     @pytest.mark.parametrize(
         ("seq", "expected"),
         [
-            (0, 1),   # duplicate / rewind
-            (2, 1),   # gap
-            (1, 2),   # replayed earlier frame
-            (0, 5),   # reconnect that did not reset the server-side counter
+            (0, 1),  # duplicate / rewind
+            (2, 1),  # gap
+            (1, 2),  # replayed earlier frame
+            (0, 5),  # reconnect that did not reset the server-side counter
         ],
     )
     def test_any_deviation_is_rejected(self, seq: int, expected: int) -> None:

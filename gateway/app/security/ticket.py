@@ -15,9 +15,10 @@ from __future__ import annotations
 import base64
 import hmac
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import Callable, Final
+from typing import Final
 
 from app.constants import TICKET_TTL_SECONDS, WS_TICKET_SUBPROTOCOL_PREFIX
 
@@ -105,7 +106,10 @@ def verify(
     try:
         data = json.loads(payload)
         claims = TicketClaims(
-            session_id=str(data["sid"]), sub=str(data["sub"]), jti=str(data["jti"]), exp=int(data["exp"])
+            session_id=str(data["sid"]),
+            sub=str(data["sub"]),
+            jti=str(data["jti"]),
+            exp=int(data["exp"]),
         )
     except (ValueError, KeyError, TypeError) as exc:
         raise TicketError() from exc
@@ -143,7 +147,7 @@ def peek_binding(ticket: str) -> tuple[str, str]:
         raise TicketError() from exc
 
 
-def extract_from_subprotocols(offered: "list[str] | tuple[str, ...] | None") -> str:
+def extract_from_subprotocols(offered: list[str] | tuple[str, ...] | None) -> str:
     """Pull the ticket out of the offered ``Sec-WebSocket-Protocol`` values.
 
     Raises:
@@ -168,7 +172,7 @@ class ReplayCache:
     task; until then ``desired_count`` is 1 and this is correct rather than convenient.
     """
 
-    __slots__ = ("_spent", "_clock", "_ttl")
+    __slots__ = ("_clock", "_spent", "_ttl")
 
     def __init__(self, clock: Callable[[], int], ttl_seconds: int = TICKET_TTL_SECONDS):
         self._spent: dict[str, int] = {}

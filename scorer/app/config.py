@@ -211,7 +211,7 @@ def _env_enum[E: Enum](name: str, enum_cls: type[E], default: str | None = None)
     try:
         return enum_cls(raw)
     except ValueError as exc:
-        valid = sorted(member.value for member in enum_cls)  # type: ignore[attr-defined]
+        valid = sorted(member.value for member in enum_cls)
         raise ConfigError(f"{name} must be one of {valid}") from exc
 
 

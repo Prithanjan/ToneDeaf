@@ -16,7 +16,7 @@ info:
 
     **Claim boundary.** A `spoof_risk` is a calibrated observation about a 2.56-second voiced
     window. It is not proof of fraud, cloned identity, or malicious intent. Actions are
-    `continue`, `verify`, `hold`, `escalate` — `approve` and `deny` do not exist in this API
+    `continue`, `verify`, `hold`, `escalate` — final decision verbs do not exist in this API
     (rules.md R-07).
 
     **Privacy boundary.** No raw audio, transcript, phone number, caller name, or speaker
@@ -242,7 +242,7 @@ components:
     Action:
       type: string
       description: |
-        The complete action vocabulary. `approve` and `deny` are absent by construction and must
+        The complete action vocabulary. Irreversible decision verbs are absent by construction and must
         never be added (rules.md R-07).
       enum: [continue, verify, hold, escalate]
 
@@ -427,7 +427,7 @@ components:
       type: object
       description: |
         The complete set of fields that may ever be returned. Adding a field here without
-        updating the structural deny-list test and CHAIN_FIELD_SET_VERSION is a contract
+        updating the structural forbidden-column test and CHAIN_FIELD_SET_VERSION is a contract
         violation (rules.md R-27).
       required: [event_id, event_seq, occurred_at, call_ref, purpose_code, risk_state, action,
                  policy_version, event_hash]
