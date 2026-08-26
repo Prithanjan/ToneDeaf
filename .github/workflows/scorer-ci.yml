@@ -122,7 +122,7 @@ jobs:
       - name: Regenerate protobuf stubs and assert no drift
         run: |
           set -euo pipefail
-          ./scripts/gen_proto.sh
+          bash ./scripts/gen_proto.sh
           if ! git diff --quiet -- scorer/app/voice_scorer_pb2.py scorer/app/voice_scorer_pb2_grpc.py; then
             echo "::error title=Stale protobuf stubs::scorer/app stubs differ from what gen_proto.sh produces from contracts/voice_scorer.proto. Run scripts/gen_proto.sh and commit the result."
             git --no-pager diff --stat -- scorer/app

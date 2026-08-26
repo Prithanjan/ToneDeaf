@@ -8,6 +8,7 @@
 line-length = 100
 target-version = "py312"
 src = ["."]
+extend-exclude = ["app/scorer/voice_scorer_pb2.py", "app/scorer/voice_scorer_pb2_grpc.py"]
 
 [tool.ruff.lint]
 select = [
@@ -26,6 +27,7 @@ ignore = [
     "S104",   # binding 0.0.0.0 is correct in a container behind a private ALB
     "B008",   # FastAPI Depends() in defaults is the framework's idiom
     "UP042",  # (str, Enum) compatibility
+    "UP038",  # isinstance union compatibility
     "S101",   # internal asserts
     "S608",   # internal DDL / query templates
     "S110",   # try-except-pass in teardown

@@ -645,12 +645,12 @@ jobs:
         # No --expect-real: CI has no ONNX artifact, so mock mode is the CORRECT state here and asserting
         # otherwise would fail an honest stack. The GPU deploy is where --expect-real belongs, and
         # deploy-runtime.yml is where it is used.
-        run: ./scripts/wait_for_scorer_healthy.sh --target localhost:50051 --timeout 180
+        run: bash ./scripts/wait_for_scorer_healthy.sh --target localhost:50051 --timeout 180
 
       - name: Run the contract suite
         # --local-contracts is the default for a localhost target: a stack built from this checkout MUST
         # serve this checkout's contract hashes, and a mismatch there means the images are stale.
-        run: ./scripts/contract_test.sh http://localhost:8080
+        run: bash ./scripts/contract_test.sh http://localhost:8080
 
       - name: Compose logs (on failure)
         if: failure()

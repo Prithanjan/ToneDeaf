@@ -174,7 +174,7 @@ class TokenValidator:
             raise AuthError()
 
         raw_groups = claims.get("cognito:groups") or claims.get("groups") or ()
-        groups = tuple(str(g) for g in raw_groups) if isinstance(raw_groups, (list, tuple)) else ()
+        groups = tuple(str(g) for g in raw_groups) if isinstance(raw_groups, list | tuple) else ()
         return Principal(sub=str(sub), groups=groups)
 
 

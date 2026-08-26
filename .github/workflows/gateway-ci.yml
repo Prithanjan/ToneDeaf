@@ -141,7 +141,7 @@ jobs:
       - name: Regenerate protobuf stubs and assert no drift
         run: |
           set -euo pipefail
-          ./scripts/gen_proto.sh
+          bash ./scripts/gen_proto.sh
           if ! git diff --quiet -- gateway/app/scorer; then
             echo "::error title=Stale protobuf stubs::gateway/app/scorer differs from what gen_proto.sh produces from contracts/voice_scorer.proto. Run scripts/gen_proto.sh and commit the result."
             git --no-pager diff --stat -- gateway/app/scorer

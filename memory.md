@@ -1595,7 +1595,9 @@ and finding that the highest-value defects live in what a control does not ask.*
 - **Fixed GitHub Actions CI Workflows & Runtime Mismatches**:
   - Upgraded action versions to major channels (`checkout@v4`, `setup-python@v5`, `setup-node@v4`, `upload-artifact@v4`) ensuring Node 24 runner runtime compatibility.
   - Aligned `pwa-ci.yml` Node version to `"22"` and eliminated brittle cache subpaths.
-  - Fixed `secret-scan.yml` placeholder allow-list markers and `.env.example` exclusion; verified `0 findings` across 195 repo files.
+  - Fixed `secret-scan.yml` S-02 self-test rule coverage: changed placeholder check to inspect captured secret values rather than keyword lines, preserving 10/10 planted rule detection and 0 false positives across 195 repo files.
+  - Fixed `gateway/pyproject.toml` to exclude generated protobuf stubs (`app/scorer/voice_scorer_pb2*.py`) from Ruff linting and fixed `UP038` union type syntax in `gateway/app/security/jwt.py`.
+  - Fixed CI unit test exit code 126 by invoking shell scripts via `bash ./scripts/*.sh` and applying `chmod +x` permissions in git index.
   - Fixed `contract-check.yml` (C-01..C-05) path resolution and schema wording; verified all static contract checks pass.
   - Fixed `ruff` formatting and `mypy` strict typing overrides across `gateway` and `scorer`; 100% clean.
 

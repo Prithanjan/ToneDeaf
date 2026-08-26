@@ -646,7 +646,7 @@ jobs:
             echo "::warning title=Contract suite skipped::The repository variable CF_DOMAIN is not set, so there is no public base URL to test. Set it after EdgeStack deploys: gh variable set CF_DOMAIN --body dXXXXXXXX.cloudfront.net . Without this, NOTHING in this run has exercised the deployed HTTP surface — only the control plane was checked."
             exit 0
           fi
-          ./scripts/contract_test.sh "https://${CF_DOMAIN}" --local-contracts
+          bash ./scripts/contract_test.sh "https://${CF_DOMAIN}" --local-contracts
 
   # =================================================================================================
   # JOB 6 — automatic stop if the deploy failed after capacity was raised.
