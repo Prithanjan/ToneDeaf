@@ -1,0 +1,211 @@
+# privacy-check — RELEASE BLOCKER (rules.md R-14 .. R-19)
+#
+# THE NAME SAYS "RELEASE BLOCKER" AND MEANS IT
+# -------------------------------------------
+# A privacy regression in this system is not a bug to schedule. The whole product claim is that raw
+# audio never persists, that a caller reference never leaves Gateway process memory in the clear, and
+# that an error message cannot become the channel by which either escapes. Those are the properties a
+# reviewer, a judge, or a DPO would actually ask about, and there is no version of "we shipped it and
+# fixed the privacy hole after" that is acceptable. So the failure text says RELEASE BLOCKER, in those
+# words, at the top of the output — because the word people read in a red CI line is what determines
+# whether they treat it as a merge conflict or as a stop-work.
+#
+# THE JOB NAME IS LOAD-BEARING, AND IT IS NOT "privacy-check"
+# ----------------------------------------------------------
+# The required check on `main` is the context `privacy-tests` (phases.md section 1.1,
+# aws-setup-instructions.md section 3.4). Branch protection matches the JOB name, so the job below is
+# named exactly `privacy-tests` — the words "RELEASE BLOCKER" live in the workflow name and in every
+# failure message instead. GitHub renders a check as "<workflow name> / <job name>", so the UI reads
+# "privacy-check — RELEASE BLOCKER / privacy-tests" and both requirements are met at once.
+#
+# Putting "RELEASE BLOCKER" in the job name instead would have changed the protection context to
+# something the documented rule does not name, and a required context that never reports blocks every
+# PR forever with no explanation — which ends with someone deleting the requirement. Named here rather
+# than left as a silent choice (rules.md R-54).
+#
+# WHAT RUNS
+#   1. `pytest -m privacy` across gateway, scorer, and audit — 55 tests at time of writing, each
+#      asserting a specific control rather than a general intention.
+#   2. `scripts/privacy_scan.py` — static analysis for the four escape routes that the runtime tests
+#      cannot see, because they are about code paths nobody executed: a write that persists PCM, a raw
+#      client_call_ref reaching a log or a query, an error message interpolating caller input, a
+#      forbidden column name reaching a migration or the client-facing schema.
+#
+# The two are complementary and both are required. The test suite proves the controls work on the paths
+# it exercises; the scanner proves nobody added a fifth path.
+name: privacy-check — RELEASE BLOCKER
+
+on:
+  pull_request:
+    # Not path-filtered. A privacy control can be broken from anywhere: a new logging call in the PWA, a
+    # column added by a migration, a helper in scorer/ that grows a file write. Narrow filters on a
+    # required check also produce "expected — waiting" states that block a PR without explaining why.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "PS104_team_document_set/**"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: privacy-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # NAME MUST STAY `privacy-tests` — see the header. This is a required check on `main`.
+  privacy-tests:
+    name: privacy-tests
+    runs-on: ubuntu-24.04
+    # No AWS. No `id-token: write`, no region.
+    steps:
+      # Exact published versions, not commit SHAs — see the pinning note in gateway-ci.yml.
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          # 3.12 — the pinned interpreter (decision D-10). privacy_scan.py parses source with `ast`, and
+          # `ast` is version-specific: a newer interpreter can parse syntax the 3.12 services cannot run,
+          # and an older one raises SyntaxError on valid 3.12 code and reports it as a scan failure.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            gateway/requirements-dev.txt
+            scorer/requirements-dev.txt
+
+      - name: Install both services' dev dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r gateway/requirements-dev.txt
+          pip install -r scorer/requirements-dev.txt
+
+      # ------------------------------------------------------------------------------------------------
+      # The static scan runs FIRST, before the test suites.
+      #
+      # It is the faster of the two and it is the one that catches a newly added escape route rather than
+      # a broken existing control. If someone has just added a `logger.info(f"... {client_call_ref}")`,
+      # the most useful thing CI can do is say so in the first fifteen seconds instead of after four
+      # minutes of pytest.
+      #
+      # Exit-code discipline matters here and the script has it: 0 clean, 1 findings, 2 the scan could
+      # not run. 2 is distinct on purpose — privacy_scan.py loads its deny-list vocabulary from
+      # gateway/app/audit/chain.py and gateway/app/telemetry/logging.py rather than restating it, so if
+      # those cannot be imported the scanner exits 2 instead of silently checking a shorter list. "The
+      # check did not run" must never be recorded as "the check passed", so 2 fails this job just as 1
+      # does, with a different message.
+      # ------------------------------------------------------------------------------------------------
+      - name: privacy_scan.py (static — the four escape routes)
+        run: |
+          # `set +e` explicitly: GitHub runs `run:` blocks under `bash -e`, so without this the step
+          # would abort on the scanner's non-zero exit before the exit code could be inspected — and
+          # the whole point here is to tell 1 (a finding) apart from 2 (the scan could not run).
+          set +e
+          set -uo pipefail
+          python scripts/privacy_scan.py
+          rc=$?
+          if [ "$rc" -eq 1 ]; then
+            echo "::error title=PRIVACY RELEASE BLOCKER — privacy_scan.py found a leak path::This is a RELEASE BLOCKER, not a lint warning. The findings above are the escape routes the privacy boundary in design.md section 3 exists to close: raw audio reaching durable storage (rules.md R-14), a raw client_call_ref reaching a log line or a query (R-16), an error message interpolating caller input (R-17), or a forbidden column/field name reaching a migration or the client-facing schema (R-15). Do not merge. Do not add an ignore. Fix the path."
+            exit 1
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=PRIVACY RELEASE BLOCKER — the privacy scan could not run (exit ${rc})::privacy_scan.py exited ${rc}, which means it could not load its deny-list vocabulary from gateway/app/audit/chain.py or gateway/app/telemetry/logging.py. It deliberately refuses to fall back to a hardcoded copy, because a scanner whose list has drifted from the writer's list reports clean while the writer accepts something new. Treat this exactly as seriously as a finding: an unrun privacy check is not a passed privacy check."
+            exit 1
+          fi
+          echo "privacy_scan.py: clean"
+
+      # ------------------------------------------------------------------------------------------------
+      # The marker suites. One step per component so a red line names the component.
+      #
+      # `--strict-markers` (both pyproject.toml files; audit registers the markers in its conftest) means
+      # a typo like `-m privcy` is an error rather than an empty selection reported green. That is the
+      # specific way a marker-based gate stops checking anything without ever going red, and it is why
+      # every one of these steps also asserts a non-zero test count below.
+      # ------------------------------------------------------------------------------------------------
+      - name: pytest -m privacy (gateway)
+        working-directory: gateway
+        run: |
+          set +e   # see the note in the privacy_scan step: `run:` blocks default to `bash -e`
+          set -uo pipefail
+          pytest -m "privacy and not integration" -v
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            # exit 5 is pytest's "no tests collected". Reported separately because it is NOT a failing
+            # control — it is a MISSING control, and the two need different responses.
+            if [ "$rc" -eq 5 ]; then
+              echo "::error title=PRIVACY RELEASE BLOCKER — no privacy tests collected in gateway::pytest collected zero tests for the 'privacy' marker. The gateway is the service that holds the ring buffer, the pseudonymiser, and the log redaction filter; a privacy suite of zero tests there is not a pass, it is the absence of the check."
+            else
+              echo "::error title=PRIVACY RELEASE BLOCKER — a gateway privacy control failed::A test asserting a privacy control failed (rules.md R-14..R-19). This is a RELEASE BLOCKER. The failing assertion names the control; treat the control as broken until the test is green, not the test as wrong."
+            fi
+            exit 1
+          fi
+
+      - name: pytest -m privacy (scorer)
+        working-directory: scorer
+        run: |
+          set +e
+          set -uo pipefail
+          pytest -m "privacy and not integration" -v
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            if [ "$rc" -eq 5 ]; then
+              # A warning, not a failure, and this asymmetry with the gateway is deliberate. The Scorer
+              # receives PCM over gRPC and holds it for the duration of one call; it has fewer privacy
+              # controls to assert because it has almost no state. Demanding a non-empty privacy suite
+              # here would push someone to write a placeholder test to satisfy CI.
+              echo "::warning title=No scorer privacy tests collected::pytest collected zero 'privacy'-marked tests in scorer/. Not treated as a failure — the Scorer holds no durable state — but worth a look if it holds any now."
+              exit 0
+            fi
+            echo "::error title=PRIVACY RELEASE BLOCKER — a scorer privacy control failed::A test asserting a privacy control failed (rules.md R-14..R-19). This is a RELEASE BLOCKER."
+            exit 1
+          fi
+
+      - name: pytest -m privacy (audit)
+        run: |
+          set +e
+          set -uo pipefail
+          if [ -z "$(find audit/tests -name 'test_*.py' -print -quit 2>/dev/null)" ]; then
+            echo "::error title=PRIVACY RELEASE BLOCKER — no audit tests exist::audit/tests contains no test modules. The audit table is the one place in this system where a privacy failure becomes permanent: a raw identifier written to an append-only, hash-chained table cannot be quietly deleted later without breaking the chain (rules.md R-15, R-27). The deny-list assertions are not optional."
+            exit 1
+          fi
+          # audit/tests/conftest.py registers the markers and sets sys.path itself, so this works from the
+          # repository root. `integration` needs a real PostgreSQL (AUDIT_TEST_DATABASE_URL); the static
+          # DDL deny-list assertions are the ones that must run on every commit, and they need no database.
+          pytest audit/tests -m "privacy and not integration" -v --strict-markers
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            if [ "$rc" -eq 5 ]; then
+              echo "::error title=PRIVACY RELEASE BLOCKER — no audit privacy tests collected::audit/tests has modules but none is marked 'privacy'. The section 5.2 column deny-list is a privacy control and must be asserted."
+            else
+              echo "::error title=PRIVACY RELEASE BLOCKER — an audit privacy control failed::The audit schema accepts something it must reject, or rejects something the writer inserts (rules.md R-15, R-27). This is a RELEASE BLOCKER: a raw identifier or audio reference written into an append-only hash-chained table cannot be removed afterwards without breaking every subsequent event hash."
+            fi
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### privacy-check — RELEASE BLOCKER"
+            echo
+            echo "\`scripts/privacy_scan.py\` plus the \`privacy\` marker suites across gateway, scorer, and audit."
+            echo
+            echo "A failure here is a **release blocker**, in those words, on purpose: there is no acceptable"
+            echo "version of shipping with a known privacy hole and fixing it later. rules.md R-14 .. R-19."
+            echo
+            echo "**NOT covered by this check** (rules.md R-52 — say what you dropped):"
+            echo "- Whether a *running* system retains audio. This is static analysis plus unit tests; the"
+            echo "  runtime property needs a live stack and an inspection of the container filesystem and"
+            echo "  the database after a session."
+            echo "- Retention expiry actually deleting rows on schedule. That is \`audit/retention_worker.py\`"
+            echo "  against a real PostgreSQL, which is an \`integration\` test."
+            echo "- Anything in a dataset manifest. \`scripts/validate_manifest.py\` covers consent basis and"
+            echo "  retention expiry for training data, and it is not wired into a PR gate because datasets"
+            echo "  are not in this repository (rules.md R-14)."
+            echo "- The PWA. \`pwa-ci\` audits the built bundle for secrets and for a service worker (which"
+            echo "  would create a browser-side at-rest surface), but no privacy-marked test suite exists"
+            echo "  for the client."
+          } >> "$GITHUB_STEP_SUMMARY"

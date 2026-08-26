@@ -1,0 +1,81 @@
+# Gateway tooling configuration.
+#
+# This file configures ruff, mypy, and pytest ONLY. It deliberately declares no [project] table and no
+# build backend: dependencies live in requirements.txt with exact pins, and two places listing
+# dependencies is two places to drift. The parity set includes the requirements file, not this one.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",     # pycodestyle
+    "F",          # pyflakes
+    "I",          # isort
+    "B",          # bugbear
+    "C4",         # comprehensions
+    "UP",         # pyupgrade
+    "ASYNC",      # async correctness — blocking calls in async paths stall every session at once
+    "S",          # bandit; see per-file ignores
+    "RUF",
+]
+ignore = [
+    "E501",   # line length is checked by the formatter, not twice
+    "S104",   # binding 0.0.0.0 is correct in a container behind a private ALB
+    "B008",   # FastAPI Depends() in defaults is the framework's idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on invariants, including negative cases that need hardcoded example keys and asserts.
+"tests/*" = ["S101", "S105", "S106"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Header", "fastapi.Path"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+# An `Any` crossing a boundary is where the privacy controls quietly stop applying: a dict typed Any
+# can carry a PCM buffer into a log call and the ALLOWED_EXTRA_KEYS filter is the only thing left.
+disallow_any_explicit = false
+disallow_any_generics = true
+warn_return_any = true
+no_implicit_reexport = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Generated protobuf stubs are not type-clean and are not ours to fix. Everything that CROSSES this
+# boundary is typed: scorer/client.py wraps every stub call and returns a typed WindowScore.
+module = ["app.scorer.voice_scorer_pb2", "app.scorer.voice_scorer_pb2_grpc"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = ["webrtcvad.*", "grpc.*", "jose.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Fail on warnings. A DeprecationWarning from asyncio or pydantic is how a pinned-stack assumption
+# silently stops being true between Day 1 and Day 5.
+filterwarnings = ["error", "ignore::DeprecationWarning:jose.*"]
+markers = [
+    "contract: negative-contract tests; Phase 1 exit criteria (technical-design.md section 9)",
+    "privacy: asserts a privacy control; failure is a RELEASE blocker (rules.md R-14..R-19)",
+    "parity: asserts a parity-set property; failure is a DEPLOY blocker",
+    "integration: needs Postgres and/or a running Scorer; skipped by default in unit CI",
+]
+addopts = "-q --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/scorer/voice_scorer_pb2*.py"]
+
+[tool.coverage.report]
+# No global percentage gate. A number here would reward tests on trivial modules while the four pure
+# modules that actually carry the invariants — frames, ring, engine, chain — could stay thin.
+# technical-design.md section 9 names the specific suites that must pass instead.
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

@@ -1,0 +1,390 @@
+# stop-runtime — end GPU spend, then PROVE it ended.
+#
+# ============================================================================================
+# THIS WORKFLOW MUST BE THE EASIEST THING IN THE REPOSITORY TO RUN
+# ============================================================================================
+# rules.md R-30: run this at the end of every working session, no exceptions. A control that is used
+# every day for five days is only as good as its worst friction point, so:
+#
+#   * There are NO required inputs. `gh workflow run stop-runtime.yml` is the whole command. Pressing
+#     "Run workflow" in the UI with nothing typed is the whole gesture. Any confirmation prompt here
+#     would be actively harmful — deploy-runtime.yml gates STARTING spend on a typed phrase precisely so
+#     that stopping it can be free.
+#   * It is idempotent. Running it when everything is already stopped succeeds and says so. It is safe to
+#     run twice, or five times, or "just in case" before going home.
+#   * It has NO `environment:`. If someone later adds a required reviewer to the `gpu-runtime`
+#     environment, a stop must not sit in "waiting for approval" while a g4dn.xlarge bills. Approval
+#     gates belong on starting spend, never on ending it.
+#   * It does not fail for cosmetic reasons. A service that does not exist yet, an ASG that is already at
+#     zero, a missing permission on a corroborating check — none of those are failures, because a stop
+#     workflow that goes red on a Tuesday for a reason nobody understands is a stop workflow people stop
+#     running by Thursday, and Thursday is the night the GPU stays up.
+#
+# IT DOES fail — loudly — for exactly one reason: something is still running after it tried to stop it.
+# That is not discouraging, that is the point. In that case it prints the manual commands and the console
+# links, so the red line is a runbook rather than a dead end.
+#
+# ZEROING IS NOT VERIFYING
+# -----------------------
+# `update-service --desired-count 0` and `update-auto-scaling-group --desired-capacity 0` are API calls
+# that return success immediately, before anything has actually shut down — and they can be silently
+# undone. The three that matter:
+#
+#   1. Zeroing desired capacity while `min-size` is still 1 makes the ASG relaunch the instance within
+#      seconds (rules.md R-31). The API call succeeded; the bill continues. So min AND max AND desired
+#      are all set to 0, and `max-size 0` is the one that also blocks an ECS capacity provider with
+#      managed scaling from raising capacity back up to satisfy a pending task.
+#   2. A service left at desiredCount 1 gives managed scaling something to satisfy. Services are zeroed
+#      FIRST for that reason, before the ASG.
+#   3. An instance launched by hand — outside the ASG, to "just test something" — is invisible to the
+#      ASG check and bills identically. That is why there is an independent `ec2 describe-instances`
+#      sweep for running g4dn instances.
+#
+# So this workflow reads the state back, in a bounded wait, and reports zero running tasks AND zero ASG
+# instances AND zero running GPU instances before it claims anything.
+#
+# WHY THERE IS NO `schedule:` TRIGGER
+# ----------------------------------
+# A nightly auto-stop is the obvious idea and it is rejected deliberately (rules.md R-54). This is a
+# five-day build. A cron that zeroes capacity at 02:00 will, on at least one of those nights, pull the
+# GPU out from under someone who is actively debugging — and the symptom is not "the GPU stopped", it is
+# "the Scorer started failing for no reason", which costs an hour of confusion. The predictable outcome
+# is that someone disables the schedule, and disabling a schedule on this file is one edit away from
+# disabling the file. The delayed AWS Budget → SNS → Lambda path (rules.md R-33) is the automated
+# backstop; this is the human one, and it is designed to be pressed rather than to fire.
+name: stop-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Accepted and IGNORED, on purpose. aws-setup-instructions.md section 12 and the team runbook may
+      # be copied with a `-f confirm=...` flag; an unknown input makes `gh workflow run` fail outright,
+      # and "the stop command errored" is the worst possible five-seconds-before-leaving experience. So
+      # the flag is tolerated. It is deliberately NOT validated: nothing about stopping spend should be
+      # conditional on typing something correctly.
+      confirm:
+        description: "Ignored. Present only so a copy-pasted command with -f confirm=... still works. No confirmation is needed to stop spend."
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two stops must not interleave — one could be zeroing the ASG while the other reads state back and
+  # reports a half-stopped system. `cancel-in-progress: false` because cancelling a stop between "services
+  # zeroed" and "ASG zeroed" leaves the expensive half running.
+  #
+  # Deliberately a DIFFERENT group from deploy-runtime.yml, so a stop is never queued behind an in-flight
+  # deploy. See the concurrency comment in that file.
+  group: stop-runtime
+  cancel-in-progress: false
+
+jobs:
+  stop:
+    name: stop the runtime and verify zero
+    runs-on: ubuntu-24.04
+    env:
+      # Pinned literal, in the job, like every other AWS-touching job here. An empty `${{ vars.AWS_REGION }}`
+      # does not error — it falls back to the runner's ambient default, and a stop workflow pointed at the
+      # wrong region reports "nothing is running" with total confidence.
+      AWS_REGION: ap-south-1
+      CLUSTER: sih26104
+      ASG_NAME: scorer-gpu-asg
+      GPU_INSTANCE_TYPE: g4dn.xlarge
+    permissions:
+      contents: read
+      id-token: write # rules.md R-55: OIDC only. No AWS_ACCESS_KEY_ID secret exists in this repository.
+    steps:
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: stop-runtime-${{ github.run_id }}
+          role-duration-seconds: 900
+
+      # -----------------------------------------------------------------------------------------------
+      # STEP 1 — record what was running BEFORE anything is changed.
+      #
+      # Without this, a run that finds everything already stopped is indistinguishable from a run that
+      # stopped a live system, and the summary cannot honestly say which happened. It also means the log
+      # of this run is the evidence for "the GPU ran for N minutes today".
+      # -----------------------------------------------------------------------------------------------
+      - name: Record the state before stopping
+        id: before
+        run: |
+          set -uo pipefail
+          echo "--- ECS services"
+          aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services gateway scorer \
+            --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,pending:pendingCount}' \
+            --output table 2>&1 || echo "(could not read services — continuing; the ASG is the billable resource)"
+
+          echo "--- ASG"
+          aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query 'AutoScalingGroups[0].{min:MinSize,max:MaxSize,desired:DesiredCapacity,instances:length(Instances)}' \
+            --output table 2>&1 || echo "(could not read the ASG — continuing to the zeroing step anyway)"
+
+          # Used only to word the summary. Never used to decide whether to do the work: skipping the
+          # zeroing because a read said "already zero" would make this workflow's usefulness depend on a
+          # read succeeding, and the read is the least important part.
+          asg_before="$(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query 'AutoScalingGroups[0].DesiredCapacity' --output text 2>/dev/null || echo unknown)"
+          echo "asg_desired_before=${asg_before}" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------------------------------
+      # STEP 2 — zero everything. Every call is `|| true`.
+      #
+      # `|| true` on a shutdown path is the opposite of the usual advice, and it is right here: if
+      # `update-service` fails because the service does not exist, aborting the step would skip the ASG
+      # zeroing — the one call that actually stops the bill. Nothing is being trusted on the basis of
+      # these calls succeeding; STEP 3 reads the state back and is what decides pass or fail. Suppressing
+      # errors is safe precisely because the verification is independent of them.
+      # -----------------------------------------------------------------------------------------------
+      - name: Zero both ECS services
+        run: |
+          set -uo pipefail
+          # Services first, then the ASG. A service left at desiredCount 1 is a pending task, and a
+          # pending task is what an ECS capacity provider with managed scaling uses to justify raising
+          # capacity again. Zeroing demand before zeroing supply removes that justification.
+          for service in gateway scorer; do
+            if out="$(aws ecs update-service --region "$AWS_REGION" --cluster "$CLUSTER" \
+                       --service "$service" --desired-count 0 2>&1)"; then
+              echo "  ok  ${service}: desired-count 0"
+            else
+              case "$out" in
+                *ServiceNotFoundException*|*ClusterNotFoundException*)
+                  echo "  --  ${service}: no such service/cluster — nothing to stop (not an error)"
+                  ;;
+                *)
+                  echo "::warning title=Could not zero ${service}::$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-300) — continuing to the ASG, which is the billable resource. The verification step decides whether this run passes."
+                  ;;
+              esac
+            fi
+          done
+
+      - name: Zero the GPU ASG (min AND max AND desired)
+        run: |
+          set -uo pipefail
+          # min=0 so the ASG does not relaunch (rules.md R-31 — zeroing desired alone with min=1 restarts
+          # the instance within seconds and the bill never stops).
+          # max=0 so nothing else can raise it: not a capacity provider's managed scaling, not a scaling
+          # policy, not a half-finished deploy-runtime run.
+          if out="$(aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
+                     --auto-scaling-group-name "$ASG_NAME" \
+                     --min-size 0 --max-size 0 --desired-capacity 0 2>&1)"; then
+            echo "  ok  ${ASG_NAME}: min=0 max=0 desired=0"
+          else
+            case "$out" in
+              *ValidationError*|*not\ found*|*AutoScalingGroup\ name\ not\ found*)
+                echo "  --  ${ASG_NAME}: no such ASG — infra is not deployed, so there is nothing to stop (not an error)"
+                ;;
+              *)
+                echo "::error title=Could not zero the GPU ASG::$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-400)"
+                echo "This is the call that stops the bill. Do not walk away from this run — see the summary for the manual commands and the console link."
+                ;;
+            esac
+          fi
+
+      # -----------------------------------------------------------------------------------------------
+      # STEP 3 — VERIFY. This is the step that makes the workflow worth having.
+      #
+      # Three independent facts, all of which must be zero, with a bounded wait because instance
+      # termination is not instantaneous (an ASG detaches, drains, and terminates over a minute or two):
+      #
+      #   V-A  zero RUNNING tasks in the cluster, and desired/running/pending all 0 on both services
+      #   V-B  zero instances attached to the ASG, and min/max/desired all 0
+      #   V-C  zero g4dn.xlarge instances in `running` or `pending` state ANYWHERE in the region
+      #
+      # V-C is not redundant. It is the only check that catches an instance someone launched by hand
+      # outside the ASG — and "I launched one directly to test the AMI" is a completely normal thing to
+      # have done on day two of a five-day build. The ASG check would report clean while that instance
+      # billed all weekend.
+      # -----------------------------------------------------------------------------------------------
+      - name: Verify zero (bounded wait)
+        id: verify
+        run: |
+          # `set +e` explicitly. GitHub runs `run:` blocks under `bash -e`, and several reads below are
+          # EXPECTED to fail (`ec2:DescribeInstances` is not in the deploy role's permissions; the ASG may
+          # not exist). Under `-e` the first denial would abort this step — and a stop workflow that goes
+          # red because a corroborating read was denied is a stop workflow people stop trusting. Every
+          # exit below is explicit.
+          set +e
+          set -uo pipefail
+          deadline=$(( $(date +%s) + 420 ))
+          reasserted=0
+
+          while :; do
+            problems=""
+
+            # --- V-A: running tasks -----------------------------------------------------------------
+            tasks="$(aws ecs list-tasks --region "$AWS_REGION" --cluster "$CLUSTER" \
+                      --desired-status RUNNING --query 'length(taskArns)' --output text 2>/dev/null || echo 0)"
+            [ "$tasks" = "None" ] && tasks=0
+            counts="$(aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" \
+                      --services gateway scorer \
+                      --query 'sum(services[].desiredCount) || `0`' --output text 2>/dev/null || echo 0)"
+            [ "$counts" = "None" ] && counts=0
+            [ "${tasks:-0}" -gt 0 ] && problems="${problems} ${tasks}_running_task(s)"
+            [ "${counts:-0}" -gt 0 ] && problems="${problems} service_desired_count=${counts}"
+
+            # --- V-B: ASG instances -----------------------------------------------------------------
+            asg="$(aws autoscaling describe-auto-scaling-groups --region "$AWS_REGION" \
+                    --auto-scaling-group-names "$ASG_NAME" \
+                    --query 'AutoScalingGroups[0].[MinSize,MaxSize,DesiredCapacity,length(Instances)]' \
+                    --output text 2>/dev/null || echo "absent")"
+            if [ "$asg" = "absent" ] || [ -z "$asg" ]; then
+              echo "  --  ASG ${ASG_NAME} not readable/absent (treated as nothing to stop)"
+            else
+              set -- $asg
+              asg_min="${1:-0}"; asg_max="${2:-0}"; asg_desired="${3:-0}"; asg_instances="${4:-0}"
+              echo "  ASG: min=${asg_min} max=${asg_max} desired=${asg_desired} instances=${asg_instances}"
+              [ "$asg_instances" -gt 0 ] && problems="${problems} ${asg_instances}_asg_instance(s)"
+              # If min/max/desired are not zero at this point, something raised them back — a concurrent
+              # deploy-runtime run, or a scaling policy. Re-assert rather than just reporting: the whole
+              # value of this workflow is that when it exits 0, capacity is off and cannot come back.
+              if [ "$asg_min" != "0" ] || [ "$asg_max" != "0" ] || [ "$asg_desired" != "0" ]; then
+                problems="${problems} asg_sizes_not_zero(min=${asg_min},max=${asg_max},desired=${asg_desired})"
+                if [ "$reasserted" -lt 3 ]; then
+                  echo "::warning title=ASG capacity came back — re-asserting zero::min/max/desired are ${asg_min}/${asg_max}/${asg_desired}, not 0/0/0. Something raised them after this run zeroed them: most likely a concurrent deploy-runtime run, or a scaling policy. Re-zeroing (attempt $(( reasserted + 1 )) of 3)."
+                  aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
+                    --auto-scaling-group-name "$ASG_NAME" \
+                    --min-size 0 --max-size 0 --desired-capacity 0 >/dev/null 2>&1 || true
+                  reasserted=$(( reasserted + 1 ))
+                fi
+              fi
+            fi
+
+            # --- V-C: any running GPU instance in the region, ASG or not ----------------------------
+            # `ec2:DescribeInstances` IS granted (infra/iam/gh-actions-deploy-policy.json statement 6b),
+            # and this check is the reason it was granted: V-A and V-B are authoritative only about what
+            # the ASG and ECS own. An instance launched by hand during a debugging session is invisible to
+            # both and bills at roughly $0.53/hour until somebody notices. R-30 makes this workflow the
+            # load-bearing cost control, so its blind spots matter more than one extra read permission.
+            #
+            # The denial branch below is kept anyway: a policy is editable, and if this grant is ever
+            # narrowed the check must degrade to a WARNING rather than fail the shutdown. V-A and V-B are
+            # the primary evidence and stand on their own. Downgrading a corroborating check is right;
+            # pretending it ran would not be (rules.md R-01). Note the asymmetry — a denied read is a
+            # warning, but an instance actually FOUND is not.
+            ec2_out="$(aws ec2 describe-instances --region "$AWS_REGION" \
+                        --filters "Name=instance-type,Values=${GPU_INSTANCE_TYPE}" \
+                                  "Name=instance-state-name,Values=running,pending" \
+                        --query 'Reservations[].Instances[].[InstanceId,State.Name,LaunchTime]' \
+                        --output text 2>&1)"
+            ec2_rc=$?
+            if [ "$ec2_rc" -ne 0 ]; then
+              case "$ec2_out" in
+                *AccessDenied*|*not\ authorized*|*UnauthorizedOperation*)
+                  echo "  ??  ec2:DescribeInstances denied — cannot independently sweep for hand-launched ${GPU_INSTANCE_TYPE} instances"
+                  ;;
+                *) echo "  ??  ec2 describe-instances failed: $(printf '%s' "$ec2_out" | tr '\n' ' ' | cut -c1-200)" ;;
+              esac
+            elif [ -n "$(printf '%s' "$ec2_out" | tr -d '[:space:]')" ]; then
+              echo "  !!  running/pending ${GPU_INSTANCE_TYPE} instance(s) found:"
+              printf '%s\n' "$ec2_out"
+              problems="${problems} loose_${GPU_INSTANCE_TYPE}_instance"
+            else
+              echo "  ok  no running or pending ${GPU_INSTANCE_TYPE} anywhere in ${AWS_REGION}"
+            fi
+
+            if [ -z "$problems" ]; then
+              echo "verified=yes" >> "$GITHUB_OUTPUT"
+              echo "VERIFIED: zero running tasks, zero ASG instances, zero running GPU instances."
+              exit 0
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "verified=no" >> "$GITHUB_OUTPUT"
+              echo "::error title=STILL RUNNING after the stop — YOU ARE STILL BEING BILLED::Outstanding:${problems}. This run issued the stop calls but could not confirm they took effect within 7 minutes. Do NOT close this tab. The summary below has the exact manual commands and the console link — a g4dn.xlarge left running overnight has already billed for the night, and the AWS Budget alarm is a delayed backstop measured in hours (rules.md R-33), not a circuit breaker."
+              exit 1
+            fi
+
+            echo "  ... still shutting down:${problems} ($(( deadline - $(date +%s) ))s left)"
+            sleep 20
+          done
+
+      # -----------------------------------------------------------------------------------------------
+      # STEP 4 — the summary. `if: always()`, and it prints the manual fallback on EVERY run.
+      #
+      # On a failed run it is the recovery procedure. On a successful run it is the thing someone reads
+      # once and remembers on the day GitHub Actions itself is down — which is the day this workflow
+      # cannot help and the commands have to be typed. A stop procedure that only exists inside CI is a
+      # stop procedure with a single point of failure.
+      # -----------------------------------------------------------------------------------------------
+      - name: Summary
+        if: always()
+        env:
+          VERIFIED: ${{ steps.verify.outputs.verified }}
+          ASG_BEFORE: ${{ steps.before.outputs.asg_desired_before }}
+        run: |
+          {
+            if [ "${VERIFIED:-}" = "yes" ]; then
+              echo "### stop-runtime — VERIFIED STOPPED"
+              echo
+              echo "- zero RUNNING tasks in cluster \`sih26104\`"
+              echo "- zero instances attached to \`scorer-gpu-asg\`, with **min=0 max=0 desired=0** so it"
+              echo "  cannot relaunch (rules.md R-31 — zeroing desired alone with min=1 restarts it in seconds)"
+              echo "- zero \`g4dn.xlarge\` in \`running\` or \`pending\` state anywhere in \`ap-south-1\`,"
+              echo "  unless the corroborating \`ec2:DescribeInstances\` sweep was denied (see the log)"
+              echo
+              if [ "${ASG_BEFORE:-unknown}" = "0" ]; then
+                echo "> The ASG was **already at zero** before this run. Nothing was billing; this run confirmed it."
+                echo "> That is the expected result of running this \"just in case\", and it is always safe to do."
+              else
+                echo "> The ASG desired capacity was \`${ASG_BEFORE:-unknown}\` before this run. GPU spend has ended."
+              fi
+            else
+              echo "### stop-runtime — COULD NOT CONFIRM THE STOP"
+              echo
+              echo "**Assume you are still being billed until you have checked by hand.**"
+            fi
+
+            echo
+            echo "---"
+            echo
+            echo "### Manual fallback — works with no GitHub Actions at all"
+            echo
+            echo "Type these if this workflow cannot run, or to double-check it:"
+            echo
+            echo '```bash'
+            echo 'export AWS_REGION=ap-south-1'
+            echo ''
+            echo '# 1. Stop the tasks'
+            echo 'aws ecs update-service --cluster sih26104 --service gateway --desired-count 0'
+            echo 'aws ecs update-service --cluster sih26104 --service scorer  --desired-count 0'
+            echo ''
+            echo '# 2. Stop the instance. min AND max AND desired -- desired alone is undone by min.'
+            echo 'aws autoscaling update-auto-scaling-group \'
+            echo '  --auto-scaling-group-name scorer-gpu-asg \'
+            echo '  --min-size 0 --max-size 0 --desired-capacity 0'
+            echo ''
+            echo '# 3. VERIFY. Steps 1 and 2 return success before anything has shut down.'
+            echo 'aws ecs list-tasks --cluster sih26104 --desired-status RUNNING        # expect: []'
+            echo 'aws autoscaling describe-auto-scaling-groups \'
+            echo '  --auto-scaling-group-names scorer-gpu-asg \'
+            echo '  --query "AutoScalingGroups[0].[MinSize,MaxSize,DesiredCapacity,Instances]"  # expect: 0 0 0 []'
+            echo 'aws ec2 describe-instances \'
+            echo '  --filters Name=instance-type,Values=g4dn.xlarge \'
+            echo '            Name=instance-state-name,Values=running,pending \'
+            echo '  --query "Reservations[].Instances[].InstanceId"                     # expect: []'
+            echo '```'
+            echo
+            echo "Console, if the CLI is not to hand — the EC2 instance list filtered to running instances"
+            echo "is the single most useful page, because it shows anything billing regardless of how it"
+            echo "was launched:"
+            echo
+            echo "<https://ap-south-1.console.aws.amazon.com/ec2/home?region=ap-south-1#Instances:instanceState=running>"
+            echo
+            echo "---"
+            echo
+            echo "### Why this is safe to run any time"
+            echo
+            echo "No confirmation, no required inputs, idempotent, and no approval gate — deliberately."
+            echo "\`deploy-runtime.yml\` gates **starting** spend behind an exact typed phrase so that"
+            echo "**stopping** it can cost nothing but a click (rules.md R-30). If you are not sure whether"
+            echo "the runtime is up: run this. Being told \"already at zero\" is a good outcome."
+          } >> "$GITHUB_STEP_SUMMARY"

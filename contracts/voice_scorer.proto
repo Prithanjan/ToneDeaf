@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+// SIH26104 Voice Integrity Control Plane — internal scoring contract.
+//
+// OWNERSHIP: Pair A (Platform/Infra). Two-key review required — see CONTRACT_CHANGE_POLICY.md.
+// This file is the seam between Pair A's Gateway and Pair B's Scorer. Get the byte contract
+// right before either side writes serving code.
+//
+// TRANSPORT SCOPE: internal only. gRPC never crosses the edge.
+//   AWS:   Gateway -> scorer.sih26104.local:50051 inside the VPC (Gateway SG only)
+//   local: Gateway -> scorer:50051 over the Compose network (no published host port)
+// mTLS between Gateway and Scorer is a Phase-4 production-hardening target; the five-day
+// control is VPC/network isolation plus security groups. Do not describe it as mTLS today.
+//
+// THE DETECTION/DECISION SEAM IS ENFORCED BY THIS MESSAGE SHAPE.
+// The Scorer receives no purpose_code, no session history, and has no field in which to
+// return an action. It cannot decide, by construction. See architecture.md section 1.
+
+package sih26104.scorer.v1;
+
+service VoiceScorer {
+  // Score exactly one 2.56-second voiced window.
+  rpc ScoreWindow (ScoreWindowRequest) returns (ScoreWindowResponse);
+
+  // Liveness/readiness plus artifact identity. Used by wait_for_scorer_healthy.sh and by
+  // the Gateway startup banner to prove both tiers carry the same artifacts.
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+
+message ScoreWindowRequest {
+  // Exactly 81920 bytes = 40960 samples x int16 LITTLE-ENDIAN, 16 kHz, mono.
+  // Wrong size => INVALID_ARGUMENT. Never padded, trimmed, or resampled to fit (rules.md R-24).
+  bytes pcm_window = 1;
+
+  // Must equal "raw-waveform-v1". Any other value => INVALID_ARGUMENT.
+  string contract_id = 2;
+
+  // Must equal 16000. A sampling rate is a channel characteristic, never spoof
+  // evidence (rules.md R-39) — it is validated here only to catch a wiring mistake.
+  uint32 sample_rate_hz = 3;
+
+  // Monotonic window counter within a session. Diagnostics/ordering only; the Scorer is
+  // stateless and must not use it to correlate windows.
+  uint64 window_seq = 4;
+
+  // HMAC pseudonym (opaque). NEVER the raw client_call_ref (rules.md R-16).
+  string session_ref = 5;
+}
+
+message ScoreWindowResponse {
+  // Calibrated risk in [0,1]. This is the ONLY field the policy engine may read.
+  float spoof_risk = 1;
+
+  string model_version = 2;        // e.g. "aasist-2019la-s17"
+  string calibration_version = 3;  // e.g. "platt-dev-v1"
+
+  repeated QualityFlag quality_flags = 4;
+
+  // false => this window is SKIPPED by the k-of-n evidence count. Not counted as
+  // low-risk. Absence of evidence is not evidence of absence (rules.md R-09).
+  bool eligible = 5;
+
+  // Pre-calibration model output. Diagnostics and ONNX-parity checking ONLY.
+  // Reading this in the policy engine violates rules.md R-11.
+  float raw_score = 6;
+
+  uint32 scorer_latency_us = 7;
+
+  // Mock mode must be visible everywhere it could mislead (rules.md R-46).
+  DetectorMode detector_mode = 8;
+}
+
+// ---------------------------------------------------------------------------
+// Health / artifact identity
+// ---------------------------------------------------------------------------
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ready = 1;
+
+  // Actual ONNX Runtime execution provider IN USE, not the one requested.
+  // A silent CPU fallback on the GPU tier is a failure, not a degradation (rules.md R-45).
+  string execution_provider = 2;
+
+  string model_version = 3;
+  string model_sha256 = 4;         // must match calibration.json's model_sha256
+  string calibration_version = 5;
+  string calibration_sha256 = 6;
+  DetectorMode detector_mode = 7;
+
+  // "research_only" | "demo_eligible" | "policy_eligible" — from release_manifest.json.
+  string artifact_state = 8;
+
+  bool contract_vector_parity_ok = 9;  // startup fixed-vector check result
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum DetectorMode {
+  DETECTOR_MODE_UNSPECIFIED = 0;
+  REAL_DETECTOR = 1;
+  // Transport smoke testing only. Never proof of detection (five-day plan section 4).
+  MOCK_SMOKE_MODE_NOT_A_DETECTOR = 2;
+}
+
+// Quality flags describe the WINDOW, not the speaker. A VAD or quality outcome is never
+// spoof evidence (playbook section 8). Nothing here may describe accent, emotion, illness,
+// gender, age, or speaking style (rules.md R-41).
+enum QualityFlag {
+  QUALITY_FLAG_UNSPECIFIED = 0;
+  LOW_ENERGY = 1;              // window energy below usable floor
+  CLIPPING_DETECTED = 2;
+  NARROWBAND_SUSPECTED = 3;    // observation for cohort analysis, NOT a spoof rule
+  HIGH_NOISE = 4;
+  PACKET_LOSS_SUSPECTED = 5;
+  DC_OFFSET = 6;
+  INSUFFICIENT_VOICED = 7;     // should not occur: Gateway gates on a full voiced window
+}

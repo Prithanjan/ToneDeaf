@@ -1,0 +1,95 @@
+# Local ingress. Stands in for CloudFront + internal ALB, and the parts that look like duplication
+# are deliberate: the cache and upgrade behaviour here mirrors the CloudFront behaviours in
+# aws-setup-instructions.md §9.2, so a bug caused by caching an API response shows up locally instead
+# of in front of judges.
+#
+# ⚠️ NEVER reload this config during a live stream. Caddy closes open WebSocket connections on reload,
+# which terminates a demo session mid-decision. Restart between runs, not during one.
+
+{
+	# No ACME. mkcert issues the certificate; a local run must not reach out to Let's Encrypt for a
+	# hostname that does not resolve publicly.
+	auto_https off
+	admin off
+}
+
+https://sih26104.local {
+	tls /etc/caddy/certs/local.pem /etc/caddy/certs/local-key.pem
+
+	# ── WebSocket: the audio channel ──────────────────────────────────────────────────────────────
+	#
+	# Matched first and matched narrowly. Two things here are correctness, not tuning:
+	#
+	#  * No buffering, no timeouts on the stream. A 648-byte binary frame arrives every 20 ms for the
+	#    life of the call; a proxy read timeout would close the socket mid-evidence-sequence and the
+	#    Gateway would record a truncated window run as if the caller hung up.
+	#  * The `Sec-WebSocket-Protocol` header must pass through untouched. The stream ticket is carried
+	#    in the subprotocol offer (D-6), so a proxy that normalises or drops it turns every connection
+	#    into AUTH_TICKET_MISSING — which looks exactly like a client bug and is not one.
+	@ws path /ws/v1/stream
+	handle @ws {
+		reverse_proxy gateway:8080 {
+			flush_interval -1
+			transport http {
+				# 0 = no read timeout. See above.
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	# ── API ───────────────────────────────────────────────────────────────────────────────────────
+	#
+	# Never cached. A cached POST /api/v1/sessions response would hand two callers the same session
+	# and therefore the same audit chain; a cached policy response would show a stale action. On AWS
+	# this is CachingDisabled with all headers forwarded.
+	@api path /api/* /healthz /readyz /metrics
+	handle @api {
+		header {
+			Cache-Control "no-store, no-cache, must-revalidate"
+			-Server
+		}
+		reverse_proxy gateway:8080
+	}
+
+	# ── PWA static assets ─────────────────────────────────────────────────────────────────────────
+	handle {
+		root * /srv/pwa
+		encode zstd gzip
+
+		# Vite emits content-hashed filenames under /assets, so those are immutable. index.html and
+		# the manifest are not: caching them is how a client ends up running an old bundle against a
+		# new contract.
+		@immutable path /assets/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		@nocache path /index.html / /manifest.webmanifest /sw.js
+		header @nocache Cache-Control "no-store"
+
+		# SPA fallback. Must come after the API and WS matchers or a typo'd API path would silently
+		# return the app shell with status 200 instead of a 404.
+		try_files {path} /index.html
+		file_server
+	}
+
+	# ── Response headers ──────────────────────────────────────────────────────────────────────────
+	header {
+		# getUserMedia needs a secure context; HSTS keeps the local origin honest about that.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# The PWA loads no third-party anything: no CDN, no webfont, no analytics (design.md §3.1,
+		# §9). `default-src 'self'` is therefore a fact about the build, not an aspiration — if this
+		# starts failing, something external got added and should be removed rather than allow-listed.
+		Content-Security-Policy "default-src 'self'; connect-src 'self' wss://sih26104.local; media-src 'self' blob:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+		# The one capability the app genuinely needs, and nothing else.
+		Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=()"
+		-Server
+	}
+
+	# Access logs stay on, and they are safe to keep on: the Gateway's redacting formatter is what
+	# protects PCM and caller references, and neither ever appears in a URL or a header Caddy logs.
+	log {
+		output stdout
+		format console
+	}
+}

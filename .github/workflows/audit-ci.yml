@@ -1,0 +1,269 @@
+# Audit CI — runs the audit database-layer suite. All of it.
+#
+# WHY THIS FILE EXISTS AT ALL
+# --------------------------
+# `audit/` was, until this file was added, the only component in the repository without a workflow of
+# its own. `gateway-ci`, `scorer-ci`, and `pwa-ci` all exist. `audit/` was reached only in passing, by
+# two cross-cutting jobs that select by marker:
+#
+#   .github/workflows/contract-check.yml:598   pytest audit/tests -m "(parity or contract) and not integration"
+#   .github/workflows/privacy-check.yml:177    pytest audit/tests -m "privacy and not integration"
+#
+# Both of those are correct and both stay. Neither was ever a component gate, and the gap between what
+# they select and what exists is not marginal. Measured at the repo root on 2026-08-26:
+#
+#   module                                  runnable   reached by CI   never executed
+#   audit/tests/test_evaluation_templates.py    191            0             191
+#   audit/tests/test_dataset_schemas.py          70            6              64
+#   audit/tests/test_retention_worker.py         65            9              56
+#   audit/tests/test_policy_bundle.py            59            5              54
+#   audit/tests/test_schema_allow_list.py        47           22              25
+#   audit/tests/test_deny_list.py                44           27              17
+#   ----------------------------------------------------------------------------------
+#   total                                       476           69             407
+#
+# 407 tests had never run anywhere except on a developer's laptop, and one entire module — the largest
+# in the repository — had never run at all. That is not a missing line in an existing job; it is a
+# component with no gate, and the marker filters made it look covered. Recorded as BUG-12 in
+# `memory.md` §4.
+#
+# The concrete cost was paid immediately. `test_evaluation_templates.py` is where the assertion that
+# `evaluation/reports/gate-7-privacy.md` cites rules.md R-58 lives — the rule that forbids rotating
+# `sih26104/audit-chain-key` once any audit event exists, which is the one operator mistake in this
+# system with no recovery path. That test was written into the 191-test module that no workflow ran. A
+# test nothing executes is a comment.
+#
+# THIS JOB SELECTS BY EXCLUSION, NOT BY MARKER
+# -------------------------------------------
+# `-m "not integration"` rather than a marker expression, and that is the whole point. Marker-based
+# selection can only ever run what someone remembered to mark; 407 unmarked tests are not
+# under-asserted, they are *unselectable*. Excluding one marker instead of naming three means a new
+# test module is covered the moment it is committed, with no second edit to a workflow — which is the
+# failure that produced this file.
+#
+# The alternative was to mark the 407. That is more honest about intent and it is 407 edits, every one
+# of which is a judgement call about which marker applies. This is one line and covers everything,
+# including tests nobody has written yet. Marking them remains worth doing later; it is not a
+# prerequisite for running them.
+#
+# THE OVERLAP WITH THE OTHER TWO JOBS IS DELIBERATE
+# ------------------------------------------------
+# 69 of these 476 now run three times on every pull request. The whole suite takes about 3 seconds, so
+# the duplication costs nothing worth optimising, and removing the audit steps from `contract-check`
+# and `privacy-check` would be a real loss: those two are required checks whose failure text says
+# RELEASE BLOCKER and PHASE 1 EXIT CRITERION in those words. Moving a privacy control out of the
+# workflow named `privacy-check` and into one named `audit-ci` makes the check harder to find in
+# exactly the review where someone needs to find it. Three cheap runs, three accurate names.
+#
+# NOTHING HERE STARTS ANYTHING
+# ---------------------------
+# No AWS credentials, no `id-token: write`, no region, no `ecs update-service`. rules.md R-29: no push
+# and no pull request can begin GPU spend. The only path that raises a desired count is
+# `.github/workflows/deploy-runtime.yml` on `workflow_dispatch`.
+name: audit-ci
+
+on:
+  pull_request:
+    paths:
+      - "audit/**"
+      # policy/, contracts/, datasets/, evaluation/ are all read as real files by these tests — they
+      # assert against the committed artifact rather than a fixture copy of it, which is why a change
+      # to any of them can break this suite without touching audit/. audit/tests/conftest.py names
+      # each of these directories explicitly (POLICY_DIR, CONTRACTS_DIR, and REPO_ROOT / "datasets" /
+      # "evaluation"). Dropping one of these globs would let the artifact and its assertions drift on
+      # a green PR, which is the same class of defect as BUG-8.
+      - "policy/**"
+      - "contracts/**"
+      - "datasets/**"
+      - "evaluation/**"
+      # conftest.py puts gateway/ on sys.path so the audit deny-list can be compared against the
+      # writer's deny-list rather than a restatement of it. That comparison is the parity property, so
+      # a change to the writer must re-run this suite.
+      - "gateway/app/audit/**"
+      - "gateway/app/constants.py"
+      # audit/ has no requirements file of its own; see the install step.
+      - "gateway/requirements.txt"
+      - "gateway/requirements-dev.txt"
+      - ".github/workflows/audit-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "audit/**"
+      - "policy/**"
+      - "contracts/**"
+      - "datasets/**"
+      - "evaluation/**"
+      - "gateway/app/audit/**"
+      - "gateway/app/constants.py"
+      - "gateway/requirements.txt"
+      - "gateway/requirements-dev.txt"
+      - ".github/workflows/audit-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  audit-tests:
+    name: audit-tests
+    runs-on: ubuntu-24.04
+    steps:
+      # Exact published versions, not commit SHAs — see the pinning note in gateway-ci.yml. Resolving
+      # SHAs needs network access that was unavailable when these files were written; until that is
+      # done this is version pinning, not supply-chain pinning (rules.md R-01).
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          # 3.12 — the pinned interpreter (decision D-10). It matters here for a specific reason:
+          # audit/tests/conftest.py loads Alembic revision modules by file path and executes them, so
+          # the DDL these tests assert against is generated by the interpreter running this step. A
+          # different interpreter would make a green run evidence about a build nobody deploys.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: gateway/requirements-dev.txt
+
+      - name: Install dependencies
+        # audit/ has no requirements.txt and does not need one. Its conftest puts audit/migrations,
+        # audit/, and gateway/ on sys.path, and the only third-party imports anywhere in the suite or
+        # in the modules it loads are pytest, alembic, asyncpg, and sqlalchemy — all four already
+        # pinned by gateway/requirements-dev.txt (which pulls in gateway/requirements.txt). Installing
+        # the Gateway's dev set is therefore not a convenience: it is the environment the audit suite's
+        # imports were written against, and a second requirements file listing the same four pins is a
+        # drift hazard for nothing (rules.md R-22).
+        #
+        # `gateway/app/audit/chain.py` itself imports only the standard library plus app.constants,
+        # which is also standard-library-only. That is what makes the chain mathematics assertable
+        # without a database, and it is worth not breaking.
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r gateway/requirements-dev.txt
+
+      # -------------------------------------------------------------------------------------------------
+      # PASSED-COUNT FLOOR, same mechanism and the same reasoning as decision E-9 in
+      # contract-check.yml:450-530. Read that comment for the full argument; the short version is that a
+      # PARTIAL skip exits 0, so a suite where 400 of 476 cases skipped because a fixture went missing
+      # reports green having checked 76 things. `passed` is computed from the JUnit <testsuite>
+      # attributes as tests - skipped - failures - errors, which is version-independent: those four have
+      # been emitted since pytest 3.x and are identical on 8.3.4 and 9.x.
+      #
+      # No `find audit/tests -name 'test_*.py'` guard, unlike the audit steps in contract-check.yml and
+      # privacy-check.yml. Those two select by marker, where an empty selection is ambiguous — it means
+      # either "no test modules" or "no test carries this marker", and they distinguish the two in the
+      # error text. This step selects by exclusion, so exit 5 has exactly one cause: audit/tests is
+      # empty. That is unambiguously red already and a guard would only restate it. Noted because the
+      # absence of a guard the two sibling workflows both have would otherwise read as an oversight
+      # (rules.md R-52).
+      #
+      # THE FLOOR IS A FLOOR, NOT AN EQUALITY. Measured 476 passed / 0 skipped / 12 deselected on
+      # 2026-08-26. Two honest caveats:
+      #
+      #   1. That measurement was taken on pytest 9.1.1 / Python 3.13.7 in a local virtualenv, NOT on
+      #      the stack this job pins (pytest 8.3.4 / Python 3.12). Parametrized case counts are stable
+      #      across those versions and nothing in this suite is version-conditional, so 476 is expected
+      #      to hold — but expected is not measured. The first run of this workflow on `main` is what
+      #      confirms it. If the number differs, the floor is what changes, with the reason written
+      #      next to it (rules.md R-22) — not the suite.
+      #   2. The slack is 21 cases (4.4%), tighter than E-9's ~9% on the gateway and scorer contract
+      #      suites, and deliberately so. This suite is heavily parametrized, and the threat is a
+      #      class-level or module-level skip: the SMALLEST module here is 44 cases and the largest
+      #      single parametrized function is 10, so 21 cases of slack absorbs deleting the two biggest
+      #      parametrize lists while any whole-class or whole-module skip falls straight through by a
+      #      wide margin. A wider floor would let a 40-case regression pass silently.
+      #
+      # Raise it when the suite grows. A floor that has to be LOWERED is a contract change, not a build
+      # fix.
+      # -------------------------------------------------------------------------------------------------
+      - name: pytest audit/tests (full suite, integration excluded)
+        run: |
+          set -uo pipefail
+          rc=0
+          # Invoked from the repository root. audit/tests/conftest.py registers the four markers itself
+          # and sets sys.path itself, so the suite behaves identically from the root or from audit/ —
+          # which is what makes --strict-markers safe without an ini file in that directory.
+          pytest audit/tests -m "not integration" -v --strict-markers \
+            --junitxml="$RUNNER_TEMP/audit-full.xml" || rc=$?
+          # pytest's own verdict wins and returns before the floor check runs. A real failure is exit 1,
+          # an empty directory is 5, a typo'd marker expression under --strict-markers is 4 — each is
+          # already red, and a second ::error about the count would bury the message saying what broke.
+          # `|| rc=$?` is also what stops the default `bash -e` shell from exiting before anything is
+          # reported; the explicit re-exit is what stops that captured code from being swallowed.
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          AUDIT_FLOOR=455 AUDIT_XML="$RUNNER_TEMP/audit-full.xml" python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          floor = int(os.environ["AUDIT_FLOOR"])
+          root = ET.parse(os.environ["AUDIT_XML"]).getroot()
+
+          # Both nestings accepted and summed rather than assuming one: an unreadable report must not
+          # become a pass by default.
+          suites = root.findall(".//testsuite") or ([root] if root.tag == "testsuite" else [])
+          if not suites:
+              print(
+                  "::error title=Unreadable audit report::the JUnit report has no <testsuite> element, "
+                  "so the number of tests that passed could not be established. Failing rather than "
+                  "assuming it was fine (rules.md R-52)."
+              )
+              raise SystemExit(1)
+
+          n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "skipped", "failures", "errors")}
+          passed = n["tests"] - n["skipped"] - n["failures"] - n["errors"]
+          print(
+              f"  audit: {passed} passed  (tests={n['tests']} skipped={n['skipped']} "
+              f"failures={n['failures']} errors={n['errors']}), floor {floor}"
+          )
+          if passed < floor:
+              print(
+                  f"::error title=Audit suite under floor::only {passed} audit tests passed; the floor "
+                  f"is {floor}. pytest exited 0 because {n['skipped']} test(s) SKIPPED rather than "
+                  "failed, so this step would otherwise have reported green while checking a fraction "
+                  "of the audit layer — the section 5.2 column deny-list, the exact column allow-list, "
+                  "action CHECK vocabulary, the retention arithmetic, and the dataset manifest schema. "
+                  "Find why they skipped: a missing fixture, an unset env var, a tripped import guard, "
+                  "an Alembic revision module that no longer loads by path. Do not lower the floor."
+              )
+              raise SystemExit(1)
+          PY
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### audit-ci"
+            echo
+            echo "The whole \`audit/tests\` suite except \`integration\`, with a passed-count floor of 455."
+            echo
+            echo "This is a **component gate**, not a control gate. The audit layer's release-blocking"
+            echo "controls keep their own homes and their own names: the section 5.2 column deny-list is asserted"
+            echo "by \`privacy-check\` (\`-m privacy\`), and the parity properties by \`contract-check\`"
+            echo "(\`-m \"parity or contract\"\`). What this job adds is that the other 407 tests run at all."
+            echo
+            echo "**NOT covered here** (rules.md R-52 — say what you dropped):"
+            echo "- **The 12 \`integration\` tests. They have still never run anywhere.** They need a real"
+            echo "  PostgreSQL 16 (\`AUDIT_TEST_DATABASE_URL\`), and no service container is configured"
+            echo "  here yet. So this workflow does NOT check: that retention expiry actually deletes"
+            echo "  rows, that the migration's DDL matches \`information_schema\` on a live database, or"
+            echo "  that the \`action\` CHECK constraint rejects a bad value in the engine rather than only"
+            echo "  in the generated SQL text. Those are the assertions that touch BUG-11 and BUG-13, and"
+            echo "  they are the highest-value thing still missing from CI."
+            echo "- **\`ruff\` and \`mypy\` over \`audit/\`. No workflow lints or type-checks this component,**"
+            echo "  including this one. \`audit/retention_worker.py\` and \`audit/migrations/\` have never"
+            echo "  been through either tool in CI. A lint step is deliberately absent rather than"
+            echo "  forgotten: it could not be run before this file was committed, and a gate whose first"
+            echo "  execution is on \`main\` is a gate nobody has tested. Run it locally first —"
+            echo "  \`ruff check audit/ && mypy audit/\` with the pins in \`gateway/requirements-dev.txt\`"
+            echo "  (ruff 0.8.6, mypy 1.14.1) — then add the step with the findings already fixed."
+            echo "- The chain mathematics. That is \`gateway/tests/test_audit_chain.py\`, run by"
+            echo "  \`gateway-ci\`. There is deliberately no overlap: this directory asserts properties of"
+            echo "  the DDL, that suite asserts properties of the hash."
+            echo "- Whether a *deployed* database matches these migrations. Only \`gateway-migrate\`"
+            echo "  running against the real RDS instance can establish that."
+          } >> "$GITHUB_STEP_SUMMARY"

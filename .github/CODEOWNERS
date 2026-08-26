@@ -1,0 +1,152 @@
+# CODEOWNERS — INERT UNTIL HUMAN DECISION H-1 IS MADE. READ THE NEXT 40 LINES.
+#
+# ==============================================================================================
+# EVERY OWNER RULE IN THIS FILE IS COMMENTED OUT, ON PURPOSE. THIS FILE CURRENTLY ENFORCES NOTHING.
+# ==============================================================================================
+# contracts/OWNERS.md lists every GitHub handle in this project as `_TBD_` (human decision H-1, a
+# Phase-0 exit condition in phases.md section 2). There is no honest way to write a working CODEOWNERS
+# file without those handles, and there are two dishonest ways, both of which were rejected:
+#
+#   1. Invent plausible handles. A CODEOWNERS entry naming a user or team that does not exist, or that
+#      has no write access to this repository, does not do what it looks like it does. Depending on the
+#      repository's settings it is either IGNORED — the rule silently grants a free pass on the exact
+#      paths it appears to protect — or it makes the "review required from Code Owners" condition
+#      permanently unsatisfiable, blocking every PR. Both outcomes are worse than an empty file, and the
+#      first is much worse, because it looks configured. (Which of the two you get depends on GitHub
+#      settings that cannot be checked from here; stated as uncertain rather than asserted — rules.md
+#      R-01.)
+#   2. Ship an active file with placeholder handles so the GitHub UI flags them as errors. Rejected for
+#      the same reason: the error is on a settings page nobody opens during a five-day build, and the
+#      rules are not in force while it sits there.
+#
+# So the ownership map below is written out in full, correct and ready, and commented. Uncommenting it is
+# a two-minute job once H-1 is decided. An inert file that says it is inert is safe; an active file that
+# quietly grants a free pass is not.
+#
+# WHAT ENFORCES THE TWO-KEY RULE IN THE MEANTIME
+# ---------------------------------------------
+# rules.md R-22: contract changes need two keys. R-57: `main` is protected. Until this file is live, that
+# is enforced ONLY by branch protection's "require 1 approving review" plus the PR template's declaration
+# of which paths were touched — that is, by a setting and by human discipline, NOT by path-aware routing.
+# The practical gap: right now ANY one teammate can approve a `contracts/` change. CODEOWNERS is what
+# makes the second key have to be the RIGHT second key.
+#
+# TO ACTIVATE (do this as soon as H-1 is decided)
+# ----------------------------------------------
+#   1. Fill in the handle table in contracts/OWNERS.md. That table is the source of truth; this file is
+#      the mechanical translation of it, and the two must not drift.
+#   2. Create three GitHub teams and give each write access to this repository. Teams, not individual
+#      handles: a teammate who leaves, changes username, or is on a train does not then block a merge,
+#      and a team's membership is visible in one place. Individual handles are the fallback if the
+#      account is a personal one where teams are unavailable.
+#        gh api -X PUT "orgs/<ORG>/teams/sih26104-pair-a/repos/<ORG>/sih26104-voice-integrity" -f permission=push
+#        # ...and the same for pair-b and pair-c
+#   3. Uncomment every rule below and replace `<ORG>`.
+#   4. THEN enable "Require review from Code Owners" in the branch protection rule for `main`. Not
+#      before: enabling it against a file whose owners do not resolve is how a repository ends up
+#      unmergeable at 2am.
+#   5. Confirm it took effect by opening a throwaway PR that touches `contracts/frame_contract.md` and
+#      checking that GitHub requests review from pair-a. A CODEOWNERS file that has never been observed
+#      to request a review has not been tested (rules.md R-01).
+#
+# HOW CODEOWNERS RESOLUTION WORKS, since it decides whether the order below is right
+# --------------------------------------------------------------------------------
+# The LAST matching pattern wins — not the most specific, and not the union. So the general rules go
+# first and the narrow ones go last. This is the opposite of .gitignore intuition and it is the single
+# most common way a CODEOWNERS file ends up protecting nothing: a broad `*` rule placed at the bottom
+# overrides every careful rule above it.
+#
+# Pair scopes, from contracts/OWNERS.md:
+#   Pair A — Platform / Infra:        contracts/, gateway/, infra/, .github/workflows/
+#   Pair B — AI / ML:                 ml/, scorer/, policy/calibration.json, evaluation/
+#   Pair C — Integration & Audit:     pwa/, audit/, policy/policy.yaml, docs/runbooks/
+
+# ------------------------------------------------------------------------------------------------
+# Default. Everything not matched below needs a Pair A review, because Pair A owns the repository
+# skeleton, the CI, and the contracts. A default of "no owner" would mean an unmatched new top-level
+# directory arrives with no review requirement at all.
+# ------------------------------------------------------------------------------------------------
+# *                                @<ORG>/sih26104-pair-a
+
+# ------------------------------------------------------------------------------------------------
+# Pair B — AI / ML
+# ------------------------------------------------------------------------------------------------
+# /ml/                             @<ORG>/sih26104-pair-b
+# /scorer/                         @<ORG>/sih26104-pair-b
+# /evaluation/                     @<ORG>/sih26104-pair-b
+
+# ------------------------------------------------------------------------------------------------
+# Pair C — Integration & Audit
+# ------------------------------------------------------------------------------------------------
+# /pwa/                            @<ORG>/sih26104-pair-c
+# /audit/                          @<ORG>/sih26104-pair-c
+# /docs/runbooks/                  @<ORG>/sih26104-pair-c
+
+# ------------------------------------------------------------------------------------------------
+# policy/ is SPLIT between two pairs, and the split is not cosmetic.
+#
+# policy.yaml is the decision policy — thresholds, hysteresis, the action vocabulary. It is a product
+# and integration artifact, so Pair C owns it. calibration.json is the score→confidence mapping derived
+# from an evaluation run, so Pair B owns it. They are in the same directory and they change for
+# completely different reasons: a threshold moves because an operator found a workflow too noisy, a
+# calibration moves because a model was retrained. One owner for both would mean whoever owns it rubber-
+# stamps half of what they see.
+#
+# Both are in the parity set (architecture.md 5.1), so either changing invalidates a recorded run.
+# ------------------------------------------------------------------------------------------------
+# /policy/policy.yaml              @<ORG>/sih26104-pair-c
+# /policy/calibration.json         @<ORG>/sih26104-pair-b
+
+# ------------------------------------------------------------------------------------------------
+# contracts/ — THE TWO-KEY PATHS (rules.md R-22)
+#
+# Listing multiple owners on one line means GitHub requires an approval from EACH listed team, which is
+# exactly what the two-key rule is. contracts/OWNERS.md's per-file routing table is the source of these:
+#
+#   frame_contract.md    Pair A + Pair B + Pair C   — all three consume it, so all three must agree
+#   voice_scorer.proto   Pair A + Pair B            — the wire format between gateway and scorer
+#   openapi.yaml         Pair A + Pair C            — the wire format between gateway and pwa
+#
+# openapi.yaml also needs Pair B when `VersionInfo` or artifact state changes, and voice_scorer.proto
+# needs Pair C when an audit field changes. Those are conditional on the CONTENT of the diff, which
+# CODEOWNERS cannot express — it matches paths, not hunks. So they are NOT encoded here and remain the
+# PR author's declaration in the pull request template. Named rather than left as a silent gap
+# (rules.md R-52): this file implements the unconditional half of the routing table only.
+# ------------------------------------------------------------------------------------------------
+# /contracts/                      @<ORG>/sih26104-pair-a
+# /contracts/frame_contract.md     @<ORG>/sih26104-pair-a @<ORG>/sih26104-pair-b @<ORG>/sih26104-pair-c
+# /contracts/voice_scorer.proto    @<ORG>/sih26104-pair-a @<ORG>/sih26104-pair-b
+# /contracts/openapi.yaml          @<ORG>/sih26104-pair-a @<ORG>/sih26104-pair-c
+
+# ------------------------------------------------------------------------------------------------
+# The two files that define who decides. Both need the tie-breaker's own key, because a change to the
+# escalation rules must not be approvable under the escalation rules it is changing.
+#
+# Replace `@<ORG>/sih26104-tiebreaker` with the tie-breaker's INDIVIDUAL handle from OWNERS.md — a team
+# is wrong here. The tie-breaker is one named person by design (H-1), and a two-person team would let
+# either member approve, which reintroduces exactly the ambiguity the role exists to remove.
+# ------------------------------------------------------------------------------------------------
+# /contracts/CONTRACT_CHANGE_POLICY.md  @<ORG>/sih26104-pair-a @<TIEBREAKER-HANDLE>
+# /contracts/OWNERS.md                  @<ORG>/sih26104-pair-a @<TIEBREAKER-HANDLE>
+# /rules.md                             @<ORG>/sih26104-pair-a @<TIEBREAKER-HANDLE>
+
+# ------------------------------------------------------------------------------------------------
+# THE COST AND CREDENTIAL PATHS — LAST, so nothing below can override them.
+#
+# These are the files where a mistake costs money or leaks access rather than causing a test failure:
+#
+#   .github/workflows/       adding a `push:` or `schedule:` trigger to deploy-runtime.yml turns every
+#                            merge into GPU spend (rules.md R-29); weakening the `github.ref ==
+#                            'refs/heads/main'` guard on a build job lets a fork PR push to ECR.
+#   infra/                   the CDK app defines the ASG, the IAM role's trust policy, and the budget
+#                            alarms (R-28..R-36, R-55).
+#   .github/CODEOWNERS       this file. A change here changes who can approve changes.
+#
+# The cost owner (R-30, named in OWNERS.md) is added as a second required key on the workflow and infra
+# paths — not because they write the most YAML, but because they are the person who pays for a mistake
+# in it, and a review requirement lands best on whoever holds the consequence.
+# ------------------------------------------------------------------------------------------------
+# /.github/                        @<ORG>/sih26104-pair-a
+# /.github/workflows/              @<ORG>/sih26104-pair-a @<COST-OWNER-HANDLE>
+# /infra/                          @<ORG>/sih26104-pair-a @<COST-OWNER-HANDLE>
+# /.github/CODEOWNERS              @<ORG>/sih26104-pair-a @<TIEBREAKER-HANDLE>

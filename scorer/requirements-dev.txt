@@ -1,0 +1,19 @@
+# Scorer development and CI dependencies — EXACT pins.
+#
+# Installed on developer machines and in CI, never in the serving image. The Dockerfile installs
+# requirements.txt plus one ONNX Runtime wheel and nothing else: a test runner, a linter, and a type
+# checker in a serving container are three packages an attacker can reach and the service cannot use.
+#
+# onnxruntime (CPU) IS here, unlike in requirements.txt. The unit suite must be able to construct a
+# real InferenceSession to exercise the provider assertion in app/model.py, and CI runs on CPU. The
+# GPU wheel is never installed for tests — there is exactly one GPU in the whole five-day budget
+# (rules.md R-32) and it is not spent on a test runner.
+
+-r requirements.txt
+
+onnxruntime==1.20.1
+grpcio-tools==1.68.1
+pytest==8.3.4
+pytest-asyncio==0.25.0
+ruff==0.8.6
+mypy==1.14.1

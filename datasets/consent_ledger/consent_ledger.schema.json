@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sih26104.local/schemas/datasets/consent_ledger/1-0-0",
+  "title": "Consent ledger (SIH26104 / PS104)",
+
+  "description": "The record of what each contributing human agreed to, kept separately from the dataset manifest and joined to it by sample_id.\n\nWHY IT IS A SEPARATE FILE. The manifest is copied, filtered, re-split, and shipped to whoever is training. The ledger is the legal basis and has a different audience, a different lifetime, and a different access rule. Merging them would mean every training copy of the manifest carries the consent evidence with it, and one of those copies eventually leaves the controlled store.\n\nWHAT IT DELIBERATELY CANNOT HOLD. No name, no phone number, no email, no address, no signature image, no recording path. The property set is closed at every level, so there is no field to put them in; the subject is identified by the same salted speaker hash the manifest uses, and the signed form is referenced by digest, not embedded (rules.md R-14, R-15, R-16). A ledger that held identities would be the single highest-value file in the repository.\n\nTWO CLOCKS, NOT ONE. retention_expiry here governs research AUDIO under a person's consent. The audit table's retention_expires_at governs derived FEATURES of live calls under a different basis and a different (shorter) window; audit/retention_worker.py enforces that one. Neither clock implies the other, and a single 'retention' field would collapse two different legal bases into one number.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "ledger_id", "created_at", "records"],
+
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "ledger_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$"
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "consent_form_versions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The wording that was actually shown, by version and digest. Consent is to specific words; 'they consented' with no record of what they were asked is not a defensible claim, and the wording changes over a project.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consent_basis", "form_sha256", "language"],
+        "properties": {
+          "consent_basis": { "$ref": "#/$defs/consent_basis" },
+          "form_sha256": { "$ref": "#/$defs/sha256" },
+          "language": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+          "plain_language_summary": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "What the person was told, in the language they were told it in. If this cannot be written in a couple of sentences, the form was not informed consent."
+          }
+        }
+      }
+    },
+    "records": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/record" } }
+  },
+
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+
+    "consent_basis": {
+      "enum": [
+        "research-consent-v1",
+        "team-member-consent-v1",
+        "synthetic-derived-from-consented-parent"
+      ],
+      "description": "The SAME vocabulary as the manifest's consent_basis, minus public-corpus-license-only — a public corpus has no ledger record because there is no individual to have consented, and inventing one would misrepresent a licence as a consent. THE JOIN RULE scripts/validate_manifest.py must enforce: every manifest record whose consent_basis is not public-corpus-license-only has exactly one ledger record covering its sample_id, and every ledger record's declared basis equals the manifest's for that sample."
+    },
+
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "consent_record_id",
+        "subject_id_hash",
+        "consent_basis",
+        "consent_form_sha256",
+        "consent_obtained_at",
+        "consent_scope",
+        "synthetic_cloning_permitted",
+        "retention_expiry",
+        "covers_sample_ids",
+        "withdrawal"
+      ],
+      "properties": {
+        "consent_record_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"
+        },
+        "subject_id_hash": {
+          "$ref": "#/$defs/sha256",
+          "description": "Identical value to the manifest's speaker_id_hash for the same person, computed with the same project salt. That equality is the entire join, and it is why this file needs no identifier of its own for the human: 'which samples belong to the person who withdrew' is answerable without the ledger ever knowing who they are."
+        },
+        "consent_basis": { "$ref": "#/$defs/consent_basis" },
+        "consent_form_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "Digest of the exact form text, matching one of consent_form_versions. A DIGEST, NOT THE DOCUMENT and not a path to it: the signed original stays in controlled storage, and this file can be read by anyone reviewing the data pipeline without exposing it."
+        },
+        "consent_obtained_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When, not just whether. Consent obtained after a recording was made is retrospective and does not cover it; without a timestamp that ordering cannot be checked."
+        },
+        "consent_scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "ENUMERATED USES, opted into one at a time. A single boolean 'consented' cannot express that someone agreed to have their voice recorded but not cloned, or recorded for training but not played to a room of judges — and those are exactly the distinctions people care about. An absent element is a refusal, not an oversight, so a use not listed here is not permitted for this subject.",
+          "items": {
+            "enum": [
+              "bonafide_recording_for_training",
+              "synthetic_clone_of_own_voice",
+              "demo_playback_to_third_parties",
+              "retention_beyond_event_window",
+              "publication_of_aggregate_metrics"
+            ]
+          }
+        },
+        "synthetic_cloning_permitted": {
+          "type": "boolean",
+          "description": "Called out as its own required field rather than left implicit in consent_scope, because it is the one permission whose violation cannot be undone: a clone of somebody's voice, once made, exists. A pipeline generating spoof samples reads THIS field, and a false here means the subject's audio may be used as bona fide training data and never as a cloning source. Redundant with the scope array on purpose — a required boolean cannot be forgotten the way a missing array element can."
+        },
+        "retention_expiry": {
+          "type": "string",
+          "format": "date",
+          "description": "MANDATORY, NON-NULLABLE, no exception. Consent with no end date is indefinite consent, which nobody knowingly gives; if the person was not told for how long, the consent is not informed and there is nothing valid to record here. After this date the covered audio must be deleted from research storage — that is a manual, owned step, not something the audit retention worker does (it never sees research audio)."
+        },
+        "covers_sample_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Manifest sample_ids covered by this consent. Explicit rather than derived from a speaker join, so 'what exactly did this consent cover' has one answer that does not depend on the current contents of the manifest.\n\nA WITHDRAWAL MUST ALSO REACH DERIVED SAMPLES. This list names what was recorded; children created by augmentation carry derived_from_sample_id and are reached by walking the manifest's derivation chain, or in one step by matching grouping.root_sample_id. Deleting only the ids listed here leaves the augmented copies behind, which is the most likely way a withdrawal gets half-honoured.",
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$" }
+        },
+        "capture_session_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$",
+          "description": "Recording session, used for session-disjoint splitting (playbook 2.2). One session's recordings share channel and room acoustics, so splitting across one leaks the channel even when speakers are disjoint."
+        },
+        "withdrawal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["withdrawn"],
+          "description": "PRESENT ON EVERY RECORD, including the ones nobody withdrew. A ledger where withdrawal is an optional key cannot distinguish 'not withdrawn' from 'we did not check', and the right to withdraw is worth nothing if exercising it is recorded in a field that may be absent.",
+          "properties": {
+            "withdrawn": { "type": "boolean" },
+            "withdrawn_at": { "type": ["string", "null"], "format": "date-time" },
+            "deletion_completed_at": {
+              "type": ["string", "null"],
+              "format": "date-time",
+              "description": "When the covered samples AND their derived children were actually removed. A withdrawal with no completion timestamp is a request, not a deletion, and the gap between the two is the exposure."
+            },
+            "deletion_evidence": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "How to check the deletion happened: the manifest revision the samples disappeared in, or the id of the removal commit. Bounded text, and no personal data — this is a pointer for an auditor, not a narrative."
+            }
+          },
+          "allOf": [
+            {
+              "$comment": "A withdrawal without a date cannot be acted on or audited, and cannot be ordered against the recordings it covers.",
+              "if": { "properties": { "withdrawn": { "const": true } }, "required": ["withdrawn"] },
+              "then": {
+                "required": ["withdrawn_at", "deletion_completed_at"],
+                "properties": { "withdrawn_at": { "type": "string" } }
+              }
+            },
+            {
+              "$comment": "And the converse: a withdrawal timestamp on a record that claims not to be withdrawn is a contradiction, and the safe reading of a contradiction is that somebody's withdrawal was reverted.",
+              "if": { "properties": { "withdrawn": { "const": false } }, "required": ["withdrawn"] },
+              "then": {
+                "properties": {
+                  "withdrawn_at": { "type": "null" },
+                  "deletion_completed_at": { "type": "null" }
+                }
+              }
+            }
+          ]
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Bounded, and MUST NOT contain personal data. Bounded specifically because an unbounded note on a per-person record is where a name ends up: 'spoke to Priya, she is fine with it' is a name in a consent file, written with good intentions."
+        }
+      },
+
+      "allOf": [
+        {
+          "$comment": "The scope array and the dedicated boolean must agree. Two fields that can disagree are worse than one, so the schema forecloses the disagreement rather than leaving a reader to guess which wins.",
+          "if": {
+            "properties": { "synthetic_cloning_permitted": { "const": true } },
+            "required": ["synthetic_cloning_permitted"]
+          },
+          "then": {
+            "properties": {
+              "consent_scope": { "contains": { "const": "synthetic_clone_of_own_voice" } }
+            }
+          }
+        },
+        {
+          "$comment": "Playing a person's voice to an audience is a separate permission from recording it, and the demo split is where that permission actually gets exercised.",
+          "if": {
+            "properties": {
+              "consent_scope": { "contains": { "const": "demo_playback_to_third_parties" } }
+            },
+            "required": ["consent_scope"]
+          },
+          "then": { "required": ["capture_session_id"] }
+        }
+      ]
+    }
+  }
+}

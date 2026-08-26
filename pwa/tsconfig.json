@@ -1,0 +1,51 @@
+{
+  // Application sources. `tsconfig.node.json` covers `vite.config.ts`, which runs in Node and must not
+  // see the DOM lib — a config file that type-checks against `window` is a config file that fails at
+  // build time on the CI runner rather than in the editor.
+  "compilerOptions": {
+    // ES2022 is the floor, not a preference: `DataView.prototype.setBigUint64` and `bigint` literals
+    // are what `lib/stream.ts` uses to write the 8-byte big-endian sequence prefix. On an ES2020
+    // target the `0n` literals are a syntax error and the sequence counter would have to become a
+    // `number`, which silently loses precision above 2^53 — the exact failure mode a monotonic wire
+    // counter must not have.
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+
+    // `vite/client` supplies `import.meta.env` and the ambient `*.module.css` declaration. Naming it
+    // explicitly also stops every `@types/*` package that happens to be installed from being pulled
+    // into the global scope, which is how a stray `@types/node` starts making `process` look available
+    // in browser code.
+    "types": ["vite/client"],
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    // Type-only imports are erased rather than inferred away, so a `import { RiskEvent }` that should
+    // have been `import type` is an error here instead of a runtime import of a type-only module.
+    "verbatimModuleSyntax": true,
+    "useDefineForClassFields": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "strict": true,
+    // `pcm[i]` is `number | undefined` under this flag, which is the truth: the frame encoder asserts
+    // the length once and then indexes, and the assertion is what makes the `!` honest. Without it a
+    // short buffer would encode `undefined` as a sample and produce a frame the Gateway refuses with no
+    // clue where it came from.
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+
+    // NOT set: `exactOptionalPropertyTypes`. The wire types mirror `contracts/openapi.yaml`, where an
+    // absent field and a `null` field are distinct, and the parsers in `lib/types.ts` assign
+    // `T | undefined` into optional properties on purpose. Turning the flag on would force a
+    // conditional-spread dance at every parse site without changing a single runtime behaviour.
+  },
+  "include": ["src"]
+}

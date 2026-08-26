@@ -1,0 +1,65 @@
+{
+  "//": [
+    "TRUST POLICY for the GitHub Actions deploy role (rules.md R-55).",
+    "",
+    "⚠️ DO NOT PASS THIS FILE TO THE AWS CLI. It is annotated source; the `\"//\"` key is not legal in an",
+    "IAM policy document and AWS rejects the whole thing with `MalformedPolicyDocument: Syntax errors in",
+    "policy`, naming no key and no line. Render it first — which also substitutes the placeholders:",
+    "",
+    "    python scripts/render_iam_policies.py --account-id <ID> --github-owner <O> --github-repo <R>",
+    "",
+    "then use infra/iam/rendered/gh-actions-trust-policy.json. The renderer refuses on any leftover",
+    "placeholder, which matters most HERE: an unsubstituted <AWS_ACCOUNT_ID> in a trust policy is not a",
+    "loud failure. The ARN simply matches nothing, `create-role` succeeds, and every deploy fails later",
+    "with an OIDC error that points at GitHub rather than at this file.",
+    "",
+    "OIDC only. There are no long-lived AWS access keys anywhere in this project — not in repository",
+    "secrets, not on a laptop. GitHub presents a short-lived signed token, AWS verifies it against the",
+    "OIDC provider, and STS issues credentials that expire with the job. A leaked workflow log cannot",
+    "leak a credential that no longer exists.",
+    "",
+    "PREREQUISITE: the OIDC identity provider must exist in the account first. It is created once, by",
+    "hand, in Phase 0 (aws-setup-instructions.md §4). Its ARN is the Federated principal below.",
+    "",
+    "REPLACE BEFORE USE: <AWS_ACCOUNT_ID>, <GITHUB_OWNER>, <GITHUB_REPO> — via the renderer above, not",
+    "by editing this file. Editing it in place is how the placeholders end up committed with a real",
+    "account id in the diff.",
+    "",
+    "THE TWO CONDITIONS ARE BOTH LOAD-BEARING, and omitting either is a known account-takeover shape:",
+    "",
+    "  1. `aud` = sts.amazonaws.com. Without it, a token minted for a different audience is accepted.",
+    "  2. `sub` restricted to THIS repo. Without a `sub` condition, ANY GitHub repository in the world",
+    "     — anyone's — can assume this role. This is the single most common OIDC misconfiguration.",
+    "",
+    "The `sub` patterns are deliberately narrow: main-branch pushes and the protected environment only.",
+    "Feature branches and pull requests cannot assume this role, which is what makes `git push` unable",
+    "to touch AWS at all (rules.md R-29) rather than merely unable to start GPU spend.",
+    "",
+    "NOTE ON `ref:refs/heads/main`: it is written with StringLike but contains no wildcard, so it is an",
+    "exact match. It is in the StringLike block only to sit alongside the environment pattern, which",
+    "also has none — both are exact by design. A `repo:OWNER/REPO:*` pattern would readmit every branch",
+    "and every pull request, which is precisely what this is preventing."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitHubOidcMainBranchAndProtectedEnvironmentOnly",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": [
+            "repo:<GITHUB_OWNER>/<GITHUB_REPO>:ref:refs/heads/main",
+            "repo:<GITHUB_OWNER>/<GITHUB_REPO>:environment:aws-deploy"
+          ]
+        }
+      }
+    }
+  ]
+}

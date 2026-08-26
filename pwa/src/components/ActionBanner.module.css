@@ -1,0 +1,153 @@
+/* ActionBanner — the control step surface.
+ *
+ * The left rail (`--vi-rail-w`) is a POSITION channel, not a decoration: on a greyscale print or under
+ * forced-colors the four action fills collapse, and the rail plus the glyph plus the label are what
+ * still distinguish `hold` from `escalate`.
+ */
+
+.banner {
+  display: grid;
+  gap: var(--vi-space-3);
+  min-block-size: var(--vi-banner-min-h);
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  padding: var(--vi-space-5);
+  background-color: var(--vi-surface-raised);
+  color: var(--vi-text);
+  border: var(--vi-border-width) solid var(--vi-border);
+  border-inline-start: var(--vi-rail-w) solid var(--vi-border-strong);
+  border-radius: var(--vi-radius-lg);
+  box-shadow: var(--vi-shadow-sm);
+  transition:
+    background-color var(--vi-dur-base) var(--vi-ease-out),
+    border-color var(--vi-dur-base) var(--vi-ease-out);
+}
+
+.banner[data-vi-action='continue'] {
+  background-color: var(--vi-action-continue-bg);
+  color: var(--vi-action-continue-fg);
+  border-color: var(--vi-action-continue-border);
+}
+
+.banner[data-vi-action='verify'] {
+  background-color: var(--vi-action-verify-bg);
+  color: var(--vi-action-verify-fg);
+  border-color: var(--vi-action-verify-border);
+}
+
+.banner[data-vi-action='hold'] {
+  background-color: var(--vi-action-hold-bg);
+  color: var(--vi-action-hold-fg);
+  border-color: var(--vi-action-hold-border);
+}
+
+.banner[data-vi-action='escalate'] {
+  background-color: var(--vi-action-escalate-bg);
+  color: var(--vi-action-escalate-fg);
+  border-color: var(--vi-action-escalate-border);
+}
+
+/* Before the first decision the banner is a neutral surface keyed to the risk state, so an empty
+ * banner never borrows an action's colour. */
+.banner[data-vi-state='collecting'] {
+  background-color: var(--vi-state-collecting-bg);
+  color: var(--vi-state-collecting-fg);
+  border-color: var(--vi-state-collecting-border);
+}
+
+.row {
+  display: flex;
+  gap: var(--vi-space-4);
+  align-items: center;
+}
+
+.glyph {
+  inline-size: var(--vi-space-8);
+  block-size: var(--vi-space-8);
+}
+
+.text {
+  display: grid;
+  gap: var(--vi-space-1);
+}
+
+.label {
+  font-size: var(--vi-text-2xl);
+  font-weight: var(--vi-weight-semibold);
+  line-height: var(--vi-leading-tight);
+  letter-spacing: var(--vi-tracking-tight);
+  /* PHYSICAL `max-width`, deliberately, and the only non-logical length in this package.
+   * `global.css` caps every `p` at `--vi-measure` using `max-width`, and a `max-inline-size` reset does
+   * not override a `max-width` cap — it sets a different property and the clamp silently survives. The
+   * override has to name the property the design system actually set. If `global.css` ever moves to
+   * `max-inline-size`, every `p`-cap reset in this package moves with it — four here, one in
+   * `RiskTimeline.module.css`, two in `App.module.css`, each marked. */
+  max-width: none;
+}
+
+.sentence {
+  line-height: var(--vi-leading-normal);
+  /* `currentColor` at 100% would tie the sentence to the action hue; the muted token keeps the label
+   * dominant without introducing a second colour decision. */
+  color: inherit;
+  opacity: var(--vi-stale-opacity);
+}
+
+.reason {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-2) var(--vi-space-3);
+  align-items: baseline;
+  padding-block-start: var(--vi-space-3);
+  border-block-start: var(--vi-border-width) solid currentColor;
+  font-size: var(--vi-text-sm);
+  max-width: none; /* see `.label` */
+}
+
+/* Sticky-high and the artifact caveat are the two statements a viewer must not be able to skip past,
+ * so both get their own rail rather than sitting in the body text. */
+.sticky,
+.caveat {
+  padding: var(--vi-space-3) var(--vi-space-4);
+  font-size: var(--vi-text-sm);
+  line-height: var(--vi-leading-relaxed);
+  background-color: var(--vi-surface);
+  color: var(--vi-text);
+  border-inline-start: var(--vi-rail-w) solid var(--vi-border-strong);
+  border-radius: var(--vi-radius-sm);
+  max-width: none; /* see `.label` */
+}
+
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-4);
+}
+
+.provenanceItem {
+  display: grid;
+  gap: var(--vi-space-1);
+}
+
+.provenanceItem dt {
+  font-size: var(--vi-text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+  opacity: var(--vi-stale-opacity);
+}
+
+/* The projector layout. `--vi-text-3xl` exists for exactly this breakpoint: the action label is the
+ * one string a judge reads from the back of a room. */
+@media (min-width: 1024px) {
+  .banner {
+    /* The one literal length in this file. `--vi-banner-min-h` is 96px and its own comment in
+     * `tokens.css` reads "handset; 128px at the projector breakpoint" — the design system states the
+     * projector value but ships no token for it (design.md §5.1), so it is written once, here, rather
+     * than invented. If a `--vi-banner-min-h-lg` ever lands, this is the line it replaces. */
+    min-block-size: 128px;
+  }
+
+  .label {
+    font-size: var(--vi-text-3xl);
+  }
+}

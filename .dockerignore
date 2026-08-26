@@ -1,0 +1,61 @@
+# Docker build context filter — ALLOW-LIST, not a deny-list.
+#
+# Both Dockerfiles take the **repository root** as their build context, because `gateway/Dockerfile`
+# needs `contracts/` and `scorer/Dockerfile` needs `ml/fixtures/` — a context rooted at the service
+# directory cannot reach either (memory.md BUG-2). That decision makes this file load-bearing: without
+# it, `docker build` streams `.git`, three virtualenvs, `node_modules`, the datasets, and the PDF
+# source set to the daemon on every build, and — worse — puts `infra/compose/.env` and
+# `infra/compose/certs/*.pem` inside the context where a future `COPY . .` would bake them into a
+# published image (rules.md R-34).
+#
+# It is written as `*` followed by explicit re-inclusions rather than as a list of exclusions. A
+# deny-list is wrong for a secret: it fails *open*. Someone adds `infra/compose/.env.prod` next month,
+# nobody updates this file, and the secret is silently in the context. With an allow-list the same
+# mistake fails closed — the new file is simply absent, and a missing file is a loud build error.
+#
+# Adding a path here is therefore a deliberate act. If a build says a file is missing, check this list
+# before changing a Dockerfile.
+
+# ── Exclude everything ───────────────────────────────────────────────────────────────────────────
+*
+
+# ── Re-include only what a Dockerfile actually COPYs ─────────────────────────────────────────────
+# gateway/Dockerfile: gateway/requirements.txt, gateway/app, contracts/{openapi.yaml,voice_scorer.proto},
+#                     policy/, audit/
+# scorer/Dockerfile:  scorer/requirements.txt, scorer/app, contracts/voice_scorer.proto,
+#                     ml/fixtures/contract_vector_v1.npy
+!gateway
+!scorer
+!contracts
+!policy
+!audit
+!ml/fixtures
+
+# ── Re-exclude junk that lives inside the allowed paths ──────────────────────────────────────────
+#
+# These would otherwise ride along inside `gateway/`, `scorer/`, and `audit/`. Bytecode caches are the
+# important one: a `__pycache__` built by this workstation's Python 3.13 inside an image running 3.12
+# is not merely useless, it is a stale-import hazard, and it defeats layer caching because the
+# timestamps change on every local test run.
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.venv
+**/.venv-*
+**/node_modules
+
+# Local-only artifacts that must never reach an image.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+**/certs
+
+# Trained/large artifacts. `ml/fixtures/` is allowed above and is deliberately tiny — the fixed
+# contract vector — while `ml/models/` holds ONNX weights that are mounted at runtime rather than
+# baked, and the datasets are never in an image at all (rules.md R-14).
+ml/models
+datasets

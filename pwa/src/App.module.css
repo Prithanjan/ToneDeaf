@@ -1,0 +1,158 @@
+/* App — page shell, provenance header and footer, transport health.
+ *
+ * One column at `--vi-content-max`. A decision surface with two columns invites a viewer to compare
+ * panels; there is one thing to read here, and it is the action.
+ */
+
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: var(--vi-space-6);
+  min-block-size: 100dvh;
+  padding: var(--vi-space-5) var(--vi-space-4) var(--vi-space-6);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-3);
+  align-items: center;
+  justify-content: space-between;
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  inline-size: 100%;
+}
+
+.wordmark {
+  font-size: var(--vi-text-sm);
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+  max-width: none; /* physical: see `.label` in `ActionBanner.module.css` */
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-2);
+}
+
+.badge,
+.badgeLoud {
+  display: inline-flex;
+  gap: var(--vi-space-1);
+  align-items: baseline;
+  padding: var(--vi-space-1) var(--vi-space-3);
+  font-size: var(--vi-text-xs);
+  border: var(--vi-border-width) solid var(--vi-border-strong);
+  border-radius: var(--vi-radius-full);
+  color: var(--vi-text-muted);
+  background-color: var(--vi-surface);
+}
+
+/* Mock mode and a sub-`policy_eligible` artifact are claim-boundary statements, so they take the
+ * `uncertain` ramp and a heavier boundary — the same treatment as a caveat, never a decorative pill. */
+.badgeLoud {
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-state-uncertain-fg);
+  background-color: var(--vi-state-uncertain-bg);
+  border-width: var(--vi-border-width-strong);
+  border-color: var(--vi-state-uncertain-border);
+}
+
+.main {
+  display: grid;
+  gap: var(--vi-space-5);
+  align-content: start;
+  inline-size: 100%;
+}
+
+.transport {
+  display: grid;
+  gap: var(--vi-space-4);
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  inline-size: 100%;
+  padding: var(--vi-space-4) var(--vi-space-5);
+  background-color: var(--vi-surface);
+  border: var(--vi-border-width) solid var(--vi-border);
+  border-radius: var(--vi-radius-lg);
+}
+
+.transportGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--vi-space-3);
+}
+
+.transportGrid dt {
+  font-size: var(--vi-text-xs);
+  color: var(--vi-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+}
+
+.transportGrid dd {
+  font-size: var(--vi-text-base);
+  font-weight: var(--vi-weight-medium);
+  color: var(--vi-text);
+  min-inline-size: 5ch;
+}
+
+.transportDetail {
+  padding: var(--vi-space-3) var(--vi-space-4);
+  font-size: var(--vi-text-sm);
+  color: var(--vi-state-uncertain-fg);
+  background-color: var(--vi-state-uncertain-bg);
+  border-inline-start: var(--vi-rail-w) solid var(--vi-state-uncertain-border);
+  border-radius: var(--vi-radius-sm);
+  max-width: none; /* physical: see `.label` in `ActionBanner.module.css` */
+}
+
+.stop {
+  justify-self: start;
+  min-block-size: var(--vi-touch-min);
+  padding: var(--vi-space-3) var(--vi-space-5);
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text);
+  background-color: var(--vi-surface-raised);
+  border: var(--vi-border-width-strong) solid var(--vi-border-strong);
+  border-radius: var(--vi-radius-md);
+}
+
+.ended {
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-muted);
+}
+
+.footer {
+  display: grid;
+  gap: var(--vi-space-3);
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  inline-size: 100%;
+  padding-block-start: var(--vi-space-4);
+  border-block-start: var(--vi-border-width) solid var(--vi-border);
+}
+
+/* The parity set (architecture.md §5.1). Small, always present: a screenshot without these versions is
+ * not evidence of anything (rules.md R-03). */
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-2) var(--vi-space-5);
+}
+
+.provenance dt {
+  font-size: var(--vi-text-xs);
+  color: var(--vi-text-subtle);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+}
+
+.disclaimer {
+  font-size: var(--vi-text-xs);
+  color: var(--vi-text-subtle);
+  line-height: var(--vi-leading-normal);
+}

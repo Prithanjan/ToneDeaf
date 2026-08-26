@@ -1,0 +1,59 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "cdk*.json", "**/*.d.ts", "**/*.js", "tsconfig.json", "package*.json", "node_modules", "cdk.out"]
+  },
+  "context": {
+    "//": "───────────────────────────────────────────────────────────────────────────────────────",
+    "// deployRuntime": "THE cost control, and it defaults to false on purpose. When false, both ECS services synth with desiredCount 0 and the GPU ASG with min/max/desired all 0, so `cdk deploy` cannot start GPU spend. Turning it on is a deliberate act with a typed confirmation in the workflow (rules.md R-29) — never a default, never inherited from an environment variable. Verify with `npm run synth:check-zero` BEFORE deploying, not after.",
+    "deployRuntime": false,
+
+    "// region": "ap-south-1 only. CloudFront ACM certificates and AWS Budgets are global services that must live in us-east-1 — that is the documented exception, and it is the ONLY one (aws-setup-instructions.md §0.2).",
+    "region": "ap-south-1",
+
+    "// monthlyBudgetUsd": "Placeholder until H-3 records the actual credit balance. A budget threshold with no cost baseline behind it is a number, not a control.",
+    "monthlyBudgetUsd": 100,
+
+    "// budgetAlertEmail": "Set before deploying CostSafetyStack. An unsubscribed SNS topic makes the Lambda the only backstop, and the Lambda is a DELAYED control (Budgets evaluates on a lag of hours) — nobody finds out until the money is spent.",
+    "budgetAlertEmail": "CHANGE_ME@example.invalid",
+
+    "// gatewayImageDigest": "Promotion is by image DIGEST, not by rebuild (rules.md R-51, R-56). Tags are immutable in ECR, but a digest is the only thing that cannot be re-pointed at all. Left empty here: CI passes it with --context, and an empty value makes ComputeStack fail loudly rather than deploy :latest.",
+    "gatewayImageDigest": "",
+    "scorerImageDigest": "",
+
+    "// allowedOrigins": "Comma-separated EXACT origins, no wildcards. Empty on purpose: this is filled in on the SECOND pass, after EdgeStack has produced a CloudFront domain. ComputeStack cannot read that domain itself — EdgeStack depends on ComputeStack's Gateway service, so the reference would be a cycle. Empty is the safe state: the Gateway's origin validator rejects an empty allow-list and the process REFUSES TO BOOT, so forgetting the second pass yields a container that will not start rather than a Gateway that accepts every origin.",
+    "allowedOrigins": "",
+
+    "// jwtIssuer": "The real identity provider's issuer URL. Must NOT be the local test issuer: a no-password JWKS issuer is a demo harness, not authentication, and the Gateway refuses to start if it sees one under the aws-gpu profile (rules.md R-05). Empty here so that an unconfigured deploy fails rather than silently trusting something.",
+    "jwtIssuer": "",
+    "jwtJwksUrl": "",
+    "jwtAudience": "sih26104-gateway",
+
+    "// gitCommit": "Stamped into the parity set and every audit row so a recorded decision can be tied to the code that made it. CI passes the real SHA; `unknown` is the honest fallback, because a fabricated commit on an audit row is worse than an absent one — it looks checkable.",
+    "gitCommit": "",
+
+    "// @aws-cdk/core:defaultCrossStackReferences": "Set explicitly to `strong` rather than left to default, which silences a synth warning and — more usefully — locks in producer-protecting behaviour: CloudFormation refuses to delete an exported resource that another stack still imports. With five chained stacks that is the property worth having, because it turns `cdk destroy NetworkStack` while ComputeStack is alive into a clean refusal instead of a broken VPC. Migrating to `weak` is a three-step dance (both → deploy everywhere → weak) with no benefit here.",
+    "@aws-cdk/core:defaultCrossStackReferences": "strong",
+
+    "// @aws-cdk/core:checkSecretUsage": "Fails synth if a Secrets Manager value is interpolated somewhere it would land in plaintext in the template — an automated form of rules.md R-34.",
+    "@aws-cdk/core:checkSecretUsage": true,
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:target-partitions": ["aws"],
+    "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": true,
+    "@aws-cdk/aws-ec2:uniqueImdsv2TemplateName": true,
+    "@aws-cdk/aws-iam:minimizePolicies": true,
+    "@aws-cdk/core:validateSnapshotRemovalPolicy": true,
+    "@aws-cdk/aws-rds:lowercaseDbIdentifier": true,
+    "@aws-cdk/aws-rds:auroraClusterChangeScopeOfInstanceParameterGroupWithEachParameters": true,
+    "@aws-cdk/aws-cloudfront:defaultSecurityPolicyTLSv1.2_2021": true,
+    "@aws-cdk/aws-ecs-patterns:removeDefaultDesiredCount": true,
+    "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+    "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+    "@aws-cdk/aws-ecs:disableExplicitDeploymentControllerForCircuitBreaker": true,
+    "@aws-cdk/core:enablePartitionLiterals": true,
+    "@aws-cdk/aws-ecs:reduceEc2FargateCloudWatchPermissions": true,
+    "@aws-cdk/aws-ec2:ec2SumTImeoutEnabled": true,
+    "@aws-cdk/aws-secretsmanager:useAttachedSecretResourcePolicyForSecretTargetAttachments": true
+  }
+}

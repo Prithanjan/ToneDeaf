@@ -1,0 +1,166 @@
+# .gitignore — what must never enter this repository.
+#
+# Two entries here are privacy controls, not housekeeping, and they are the reason this file is
+# reviewed rather than generated:
+#
+#   * AUDIO (*.wav, *.flac, and the raw-capture scratch paths below) — rules.md R-14 and R-21. No raw
+#     audio persists anywhere by default, and research audio never enters this repository or default
+#     cloud storage. Manifests carry hashes and IDs; the audio itself stays in controlled research
+#     storage under the consent ledger. Git makes deletion effectively impossible: a `git rm` leaves
+#     the blob in every clone's history and in every fork, so a single committed sample converts a
+#     retention promise into something the team cannot honour. There is no "just this once" here.
+#
+#   * MODEL WEIGHTS (*.onnx, *.pth, *.pt, *.ckpt) — architecture.md section 5.1 and rules.md R-42/R-51.
+#     The parity set tracks a model by its SHA-256, recorded in calibration.json and the release
+#     manifest. A committed .onnx puts an unversioned artifact *outside* that set: two tiers could then
+#     load different bytes while both reporting the same Git commit, and the dual-tier parity claim
+#     would be false in exactly the way nobody thinks to check. Model artifacts are released with a
+#     hash and a manifest, not committed alongside source.
+#
+# Everything else below is ordinary build/tooling noise, plus the secret-bearing files that rules.md
+# R-34 forbids in Git.
+
+# ── Python ─────────────────────────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtualenvs. The `.venv*` glob deliberately covers the scratch `.venv-verify/` at the repo root:
+# a committed interpreter tree is ~100 MB of files that also happen to shadow the pinned 3.12
+# environment the parity set depends on (gateway/requirements.txt, decision D-10).
+.venv/
+.venv*/
+venv/
+env/
+
+# ── Node / PWA ─────────────────────────────────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ── Infrastructure ─────────────────────────────────────────────────────────────────────────────────
+cdk.out/
+*.cdk.staging/
+.cdk.staging/
+cdk.context.json
+
+# Rendered IAM policy documents. The sources in infra/iam/ carry `<AWS_ACCOUNT_ID>` placeholders and
+# ARE committed; scripts/render_iam_policies.py substitutes them into this directory, so its contents
+# embed a real account id. The generated directory also ships its own `.gitignore` containing `*` —
+# belt and braces, so the protection survives someone deleting this line, and holds even before this
+# file is read (the renderer writes it on every run).
+infra/iam/rendered/
+
+# ── Secrets (rules.md R-34: no secrets in Git, images, or the client) ──────────────────────────────
+# gateway/.env.example IS committed — it is all obvious placeholders. gateway/.env is not.
+.env
+.env.*
+!.env.example
+!*.env.example
+gateway/.env
+scorer/.env
+pwa/.env
+*.secret
+secrets.json
+secrets.yaml
+secrets.yml
+*_secret.json
+credentials
+.aws/
+# A committed key file is the single finding secret-scan.yml exists to prevent reaching `main`.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+
+# mkcert-generated local TLS material. The local CA is a *trusted root* on every device it is
+# installed on (architecture.md section 5) — committing its key hands anyone who clones this repo the
+# ability to mint certificates the demo phone will trust.
+#
+# NOTE THE TRAILING `/*`, AND DO NOT "TIDY" IT TO `**/certs/`. Excluding the *directory* also excludes
+# everything under it permanently: git cannot re-include a file whose parent directory is excluded, so
+# `!**/certs/README.md` below would silently do nothing and `infra/compose/certs/README.md` — the
+# instructions for generating this material — could never be committed. A fresh clone would then have
+# no certs directory and no way to find out what belongs in it. Excluding the *contents* keeps the
+# negation working.
+**/certs/*
+!**/certs/README.md
+!**/certs/.gitkeep
+rootCA.pem
+rootCA-key.pem
+*-key.pem
+*+*.pem
+mkcert*
+
+# ── Audio — see the header. rules.md R-14, R-21. ───────────────────────────────────────────────────
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.ogg
+*.opus
+*.aac
+*.pcm
+*.raw
+*.sph
+# Scratch capture directories people create while debugging the frame parser. Named explicitly
+# because "I'll delete it before committing" is not a control.
+captures/
+recordings/
+audio_dump/
+*_capture/
+
+# ── Model weights and large artifacts — see the header. architecture.md section 5.1. ───────────────
+*.onnx
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.tflite
+*.pb
+*.h5
+# Training scratch. Checkpoints belong in the model release directory with a SHA-256, not in Git.
+ml/runs/
+ml/checkpoints/
+ml/wandb/
+mlruns/
+
+# Dataset payloads. datasets/manifest/manifest.parquet IS the tracked artifact (Pair B) — it holds
+# hashes and IDs, never audio, and scripts/validate_manifest.py is what keeps that true.
+datasets/raw/
+datasets/audio/
+datasets/**/*.tar
+datasets/**/*.tar.gz
+datasets/**/*.zip
+
+# ── Scratch extractions ────────────────────────────────────────────────────────────────────────────
+# _part2_extract.txt is a text extraction of the source runbook PDF held at the repo root while the
+# planning docs were written. The authoritative copy is
+# PS104_team_document_set/SIH26104_Phase1-3_Implementation_Runbook.md; the extract is lossy OCR and
+# committing it would create a second, subtly-wrong copy of a normative document.
+_part2_extract.txt
+*_extract.txt
+
+# ── Editor / OS ────────────────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~

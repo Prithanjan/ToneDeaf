@@ -1,0 +1,516 @@
+openapi: 3.1.0
+
+# SIH26104 Voice Integrity Control Plane — public API contract.
+# OWNERSHIP: Pair A. Two-key review required (CONTRACT_CHANGE_POLICY.md).
+# This is the seam for Pair C's PWA.
+#
+# Binary WebSocket framing is NOT expressible in OpenAPI. It is normative in
+# contracts/frame_contract.md. The /ws/v1/stream entry below documents the handshake and the
+# JSON message schemas only.
+
+info:
+  title: Voice Integrity Control Plane API
+  version: 1.0.0-phase1
+  description: |
+    Privacy-preserving real-time decision layer for synthetic-speech risk.
+
+    **Claim boundary.** A `spoof_risk` is a calibrated observation about a 2.56-second voiced
+    window. It is not proof of fraud, cloned identity, or malicious intent. Actions are
+    `continue`, `verify`, `hold`, `escalate` — `approve` and `deny` do not exist in this API
+    (rules.md R-07).
+
+    **Privacy boundary.** No raw audio, transcript, phone number, caller name, or speaker
+    embedding appears in any request, response, log, or stored record. `client_call_ref` is
+    HMAC-pseudonymized on receipt and the raw value never leaves Gateway process memory.
+  license:
+    name: Proprietary — SIH26104 team
+
+servers:
+  - url: https://{edgeHost}
+    description: AWS tier via CloudFront
+    variables: { edgeHost: { default: d111111abcdef8.cloudfront.net } }
+  - url: https://sih26104.local
+    description: Local CPU fallback tier via Caddy
+
+tags:
+  - name: sessions
+  - name: streaming
+  - name: audit
+  - name: ops
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  /api/v1/sessions:
+    post:
+      tags: [sessions]
+      operationId: createSession
+      summary: Open a session and pseudonymize the caller reference
+      description: |
+        The ONLY endpoint that ever accepts a human-readable `client_call_ref`. The Gateway
+        computes a server-keyed HMAC immediately and returns the opaque `call_ref`. The raw
+        value is not logged, not stored, not forwarded to the Scorer, and not returned.
+
+        `purpose_code` and `context_value_band` are bound HERE, before any audio exists
+        (technical-design.md D-4). `session.open` must echo the same `purpose_code` or the stream is
+        rejected with `PROTO_PURPOSE_MISMATCH`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSessionRequest' }
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateSessionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/stream-ticket:
+    post:
+      tags: [streaming]
+      operationId: createStreamTicket
+      summary: Mint a short-lived single-use WebSocket ticket
+      description: |
+        Exists so the bearer token never appears in a WebSocket URL, query string, or cookie.
+        The ticket is signed, single-use, valid 60 seconds, and bound to both `session_id` and
+        the caller's `sub`. Presenting it twice fails with `AUTH_TICKET_INVALID`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StreamTicketRequest' }
+      responses:
+        '201':
+          description: Ticket minted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StreamTicketResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Session already has a live stream
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /ws/v1/stream:
+    get:
+      tags: [streaming]
+      operationId: openStream
+      summary: WebSocket stream (documentation entry — not a REST call)
+      description: |
+        **Handshake**
+
+            Upgrade: websocket
+            Origin: <must be on the server allow-list>
+            Sec-WebSocket-Protocol: sih-v1, sih-ticket.<url-safe-base64-ticket>
+
+        **Message order**
+        1. Client sends exactly one `session.open` text frame (JSON, <= 4096 bytes).
+        2. Server replies `session.accepted`.
+        3. Client sends binary frames: `uint64` big-endian sequence + 640 bytes int16-LE PCM,
+           total exactly **648 bytes**. See contracts/frame_contract.md.
+        4. Server emits `risk.event` per scored window and `policy.action` on state change.
+
+        Any deviation closes the connection with a code from `WsErrorCode`. Error messages are
+        static and never echo client input (rules.md R-17).
+      security: []   # authenticated by the ticket subprotocol, not a bearer header
+      parameters:
+        - name: Sec-WebSocket-Protocol
+          in: header
+          required: true
+          schema: { type: string, example: 'sih-v1, sih-ticket.eyJ0…' }
+        - name: Origin
+          in: header
+          required: true
+          schema: { type: string, format: uri }
+      responses:
+        '101': { description: Switching Protocols }
+        '401': { description: Missing or invalid ticket (AUTH_TICKET_MISSING / AUTH_TICKET_INVALID) }
+        '403': { description: Origin not allow-listed (AUTH_ORIGIN_DENIED) }
+
+  /api/v1/sessions/{session_id}/audit:
+    get:
+      tags: [audit]
+      operationId: getSessionAudit
+      summary: Feature-only audit trail for the Privacy Inspector
+      description: |
+        **Phase 4 — contract defined in Phase 1, implemented in Phase 4.**
+        Returns only the allow-listed audit fields (technical-design.md §5.1). There is no endpoint,
+        parameter, or response field anywhere in this API that can return audio.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Chained, feature-only audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, events, chain_verified]
+                properties:
+                  session_id: { type: string, format: uuid }
+                  chain_verified:
+                    type: boolean
+                    description: Server-side hash-chain verification result for this session.
+                  events:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditEvent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/version:
+    get:
+      tags: [ops]
+      operationId: getVersion
+      summary: Deployed artifact identity (the parity set)
+      description: |
+        Returns the parity set from architecture.md §5.1. This is how a judge verifies that the
+        AWS tier and the local CPU tier are running the same signed release — the hashes must
+        match across tiers even though the images cannot be byte-identical (rules.md R-06).
+      security: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VersionInfo' }
+
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: healthz
+      summary: Liveness
+      security: []
+      responses:
+        '200': { description: Process is alive }
+
+  /readyz:
+    get:
+      tags: [ops]
+      operationId: readyz
+      summary: Readiness (DB reachable, Scorer reachable, policy bundle loaded)
+      security: []
+      responses:
+        '200': { description: Ready }
+        '503':
+          description: Not ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadinessReport' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Cognito ID token on the AWS tier; restricted local JWKS test issuer on the CPU tier.
+        ONE validation code path serves both — the issuer and JWKS URL are configuration
+        (rules.md R-04). The local issuer is a demo-only test harness and is NOT authentication
+        (rules.md R-05).
+
+  schemas:
+
+    PurposeCode:
+      type: string
+      description: Declared purpose of the interaction. Drives the action map in policy.yaml.
+      enum: [payment_release, beneficiary_change, account_recovery, support_enquiry]
+
+    ContextValueBand:
+      type: string
+      description: |
+        Coarse value band — a CLOSED enum by design (technical-design.md D-5). A free-string or numeric
+        amount would be unauditable and would invite PII into the audit table.
+      enum: [low, medium, high, unspecified]
+
+    RiskState:
+      type: string
+      enum: [collecting, uncertain, high]
+
+    Action:
+      type: string
+      description: |
+        The complete action vocabulary. `approve` and `deny` are absent by construction and must
+        never be added (rules.md R-07).
+      enum: [continue, verify, hold, escalate]
+
+    ReasonCode:
+      type: string
+      enum: [EVIDENCE_BELOW_K, EVIDENCE_K_OF_N_MET, INSUFFICIENT_ELIGIBLE_WINDOWS, QUALITY_DEGRADED]
+
+    QualityFlag:
+      type: string
+      enum: [LOW_ENERGY, CLIPPING_DETECTED, NARROWBAND_SUSPECTED, HIGH_NOISE,
+             PACKET_LOSS_SUSPECTED, DC_OFFSET, INSUFFICIENT_VOICED]
+
+    DetectorMode:
+      type: string
+      enum: [REAL_DETECTOR, MOCK_SMOKE_MODE_NOT_A_DETECTOR]
+
+    DeploymentProfile:
+      type: string
+      enum: [aws-gpu, local-cpu]
+
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [client_call_ref, purpose_code, context_value_band, consent_acknowledged]
+      properties:
+        client_call_ref:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: |
+            Human-readable demo call reference. HMAC-pseudonymized on receipt; the raw value
+            never leaves Gateway process memory (rules.md R-16). Do NOT send a phone number,
+            a real customer identifier, or a caller name.
+        purpose_code: { $ref: '#/components/schemas/PurposeCode' }
+        context_value_band: { $ref: '#/components/schemas/ContextValueBand' }
+        consent_acknowledged:
+          type: boolean
+          const: true
+          description: |
+            Client asserts the purpose-and-privacy notice was displayed and acknowledged BEFORE
+            getUserMedia was called. The PWA enforces the ordering structurally (rules.md R-18);
+            this flag records the assertion in the audit trail.
+
+    CreateSessionResponse:
+      type: object
+      required: [session_id, call_ref, purpose_code, context_value_band, policy_version,
+                 retention_days, expires_at]
+      properties:
+        session_id: { type: string, format: uuid }
+        call_ref:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: HMAC-SHA256 pseudonym, hex. The only caller reference that exists downstream.
+        purpose_code: { $ref: '#/components/schemas/PurposeCode' }
+        context_value_band: { $ref: '#/components/schemas/ContextValueBand' }
+        policy_version: { type: string }
+        retention_days:
+          type: integer
+          description: Audit retention for events in this session. Shown in the Privacy Inspector.
+        expires_at: { type: string, format: date-time }
+
+    StreamTicketRequest:
+      type: object
+      additionalProperties: false
+      required: [session_id]
+      properties:
+        session_id: { type: string, format: uuid }
+
+    StreamTicketResponse:
+      type: object
+      required: [ticket, subprotocol, expires_in_seconds]
+      properties:
+        ticket: { type: string, description: Opaque signed single-use token. }
+        subprotocol:
+          type: string
+          example: sih-ticket.eyJ0…
+          description: Offer this verbatim as the second WebSocket subprotocol.
+        expires_in_seconds: { type: integer, const: 60 }
+
+    SessionOpen:
+      type: object
+      description: First and only text frame the client sends. WSS message, not a REST body.
+      additionalProperties: false
+      required: [type, call_ref, purpose_code, context_value_band]
+      properties:
+        type: { type: string, const: session.open }
+        call_ref: { type: string, pattern: '^[0-9a-f]{64}$' }
+        purpose_code: { $ref: '#/components/schemas/PurposeCode' }
+        context_value_band: { $ref: '#/components/schemas/ContextValueBand' }
+        client_capture:
+          type: object
+          additionalProperties: false
+          description: |
+            Declared capture path. `scriptprocessor` is the honest current state; `audioworklet`
+            is the target (architecture.md §3). Recorded so the current-state honesty is visible
+            at runtime, not only in a document.
+          properties:
+            sample_rate_hz: { type: integer, const: 16000 }
+            frame_ms: { type: integer, const: 20 }
+            path: { type: string, enum: [scriptprocessor, audioworklet] }
+
+    SessionAccepted:
+      type: object
+      required: [type, session_id, policy_version, deployment_profile]
+      properties:
+        type: { type: string, const: session.accepted }
+        session_id: { type: string, format: uuid }
+        policy_version: { type: string }
+        model_version: { type: string }
+        calibration_version: { type: string }
+        deployment_profile: { $ref: '#/components/schemas/DeploymentProfile' }
+        execution_provider: { type: string }
+        detector_mode: { $ref: '#/components/schemas/DetectorMode' }
+
+    RiskEvent:
+      type: object
+      description: One scored window. Contains no audio and no audio-derived features.
+      required: [type, window_seq, spoof_risk, risk_state, eligible, occurred_at]
+      properties:
+        type: { type: string, const: risk.event }
+        window_seq: { type: integer }
+        spoof_risk:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            Calibrated. While calibration.json carries `status: placeholder-not-policy-eligible`
+            the client MUST NOT present this with probability language (rules.md R-11).
+        risk_state: { $ref: '#/components/schemas/RiskState' }
+        eligible:
+          type: boolean
+          description: false => skipped by the k-of-n count, NOT counted as low risk.
+        quality_flags:
+          type: array
+          items: { $ref: '#/components/schemas/QualityFlag' }
+        occurred_at: { type: string, format: date-time }
+
+    PolicyAction:
+      type: object
+      required: [type, action, risk_state, purpose_code, policy_version, reason_code]
+      properties:
+        type: { type: string, const: policy.action }
+        action: { $ref: '#/components/schemas/Action' }
+        risk_state: { $ref: '#/components/schemas/RiskState' }
+        purpose_code: { $ref: '#/components/schemas/PurposeCode' }
+        policy_version: { type: string }
+        reason_code: { $ref: '#/components/schemas/ReasonCode' }
+        audit_event_id: { type: string, format: uuid }
+        evidence_window_count: { type: integer, description: Eligible windows counted (n). }
+        evidence_high_count: { type: integer, description: High windows among them (k). }
+
+    SessionClosed:
+      type: object
+      required: [type, reason_code, buffer_cleared]
+      properties:
+        type: { type: string, const: session.closed }
+        reason_code: { type: string }
+        windows_scored: { type: integer }
+        buffer_cleared:
+          type: boolean
+          const: true
+          description: Asserts the volatile PCM ring buffer was zeroed (rules.md R-14).
+
+    WsErrorCode:
+      type: string
+      enum: [AUTH_TICKET_MISSING, AUTH_TICKET_INVALID, AUTH_ORIGIN_DENIED,
+             PROTO_FRAME_SIZE, PROTO_SEQUENCE, PROTO_FIRST_MESSAGE,
+             PROTO_PURPOSE_MISMATCH, PROTO_PAYLOAD_TOO_LARGE,
+             SESSION_ALREADY_STREAMING, BACKPRESSURE_REJECT, SCORER_UNAVAILABLE]
+
+    WsError:
+      type: object
+      required: [type, code, message]
+      properties:
+        type: { type: string, const: error }
+        code: { $ref: '#/components/schemas/WsErrorCode' }
+        message:
+          type: string
+          description: STATIC text. Never interpolates client input (rules.md R-17).
+
+    AuditEvent:
+      type: object
+      description: |
+        The complete set of fields that may ever be returned. Adding a field here without
+        updating the structural deny-list test and CHAIN_FIELD_SET_VERSION is a contract
+        violation (rules.md R-27).
+      required: [event_id, event_seq, occurred_at, call_ref, purpose_code, risk_state, action,
+                 policy_version, event_hash]
+      properties:
+        event_id: { type: string, format: uuid }
+        event_seq: { type: integer }
+        occurred_at: { type: string, format: date-time }
+        call_ref: { type: string, pattern: '^[0-9a-f]{64}$' }
+        purpose_code: { $ref: '#/components/schemas/PurposeCode' }
+        context_value_band: { $ref: '#/components/schemas/ContextValueBand' }
+        window_seq: { type: [integer, 'null'] }
+        spoof_risk: { type: [number, 'null'] }
+        risk_state: { $ref: '#/components/schemas/RiskState' }
+        action: { $ref: '#/components/schemas/Action' }
+        reason_code: { $ref: '#/components/schemas/ReasonCode' }
+        policy_version: { type: string }
+        policy_bundle_sha256: { type: string }
+        model_version: { type: string }
+        model_sha256: { type: string }
+        calibration_version: { type: string }
+        calibration_sha256: { type: string }
+        quality_flags: { type: array, items: { $ref: '#/components/schemas/QualityFlag' } }
+        detector_mode: { $ref: '#/components/schemas/DetectorMode' }
+        execution_provider: { type: string }
+        deployment_profile: { $ref: '#/components/schemas/DeploymentProfile' }
+        prev_event_hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        event_hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        retention_expires_at: { type: string, format: date-time }
+
+    VersionInfo:
+      type: object
+      description: The parity set (architecture.md §5.1).
+      required: [git_commit, deployment_profile, api_schema_sha256, proto_sha256,
+                 policy_bundle_sha256, artifact_state]
+      properties:
+        git_commit: { type: string }
+        deployment_profile: { $ref: '#/components/schemas/DeploymentProfile' }
+        execution_provider: { type: string }
+        api_schema_sha256: { type: string }
+        proto_sha256: { type: string }
+        policy_version: { type: string }
+        policy_bundle_sha256: { type: string }
+        model_version: { type: string }
+        model_sha256: { type: string }
+        calibration_version: { type: string }
+        calibration_sha256: { type: string }
+        migration_head: { type: string }
+        detector_mode: { $ref: '#/components/schemas/DetectorMode' }
+        artifact_state:
+          type: string
+          enum: [research_only, demo_eligible, policy_eligible]
+          description: Only `policy_eligible` may drive a high-risk action (playbook §9).
+
+    ReadinessReport:
+      type: object
+      properties:
+        ready: { type: boolean }
+        database: { type: boolean }
+        scorer: { type: boolean }
+        policy_bundle: { type: boolean }
+        secrets: { type: boolean }
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string, description: Static text. Never echoes client input. }
+        request_id: { type: string }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ValidationError:
+      description: Schema validation failed
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    RateLimited:
+      description: Too many requests
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }

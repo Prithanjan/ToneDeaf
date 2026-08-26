@@ -1,0 +1,13 @@
+{
+  "name": "Voice Integrity Control Plane",
+  "short_name": "Voice Integrity",
+  "description": "Operator console: streams call audio for synthetic-speech artifact scoring and shows the resulting control step. No raw audio is retained on this device or on the server.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "utilities"]
+}

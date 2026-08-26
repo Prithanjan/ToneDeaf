@@ -1,0 +1,664 @@
+# contract-check — the seam all three pairs integrate against, checked statically on every PR.
+#
+# THE JOB NAME IS LOAD-BEARING
+# ---------------------------
+# The required status check on `main` is `contract-test` (rules.md R-57, aws-setup-instructions.md
+# section 3.4, phases.md section 1.1). Branch protection matches the *job* name, not the workflow name,
+# so the job below is named exactly `contract-test`. Renaming it does not turn the gate off with a
+# visible error — it makes branch protection wait forever for a context that will never report, and the
+# first person who hits an unmergeable PR will be tempted to delete the requirement. If this job is ever
+# renamed, update the protection rule in the same change.
+#
+# WHY THESE CHECKS ARE STATIC
+# --------------------------
+# Everything here runs without Postgres, without a Scorer, and without Docker, in well under a minute.
+# That is a deliberate design constraint, not a limitation: a required check that takes ten minutes and
+# needs a working Compose stack is a check that gets marked "not required" the first afternoon it flakes.
+# The live end-to-end equivalent is scripts/contract_test.sh, which runs against a real base URL — see
+# the `compose-contract-test` job at the bottom, which is opt-in for exactly this reason.
+#
+# WHAT IT COVERS
+#   C-01  contracts/openapi.yaml parses, and is a document an OpenAPI consumer would accept
+#   C-02  contracts/voice_scorer.proto compiles under protoc
+#   C-03  the proto hash is ONE value: the two independent implementations that compute it agree with
+#         each other and with the file on disk
+#   C-04  the frame contract document's constants table agrees with gateway/app/constants.py
+#   C-05  shared runtime pins are identical across gateway/ and scorer/
+#   C-06  `pytest -m parity` and `pytest -m contract` across gateway, scorer, and audit
+name: contract-check
+
+on:
+  pull_request:
+    # Not path-filtered as narrowly as the per-service workflows. A required check that is skipped for a
+    # path is reported as "expected — waiting", which blocks the PR without saying why. contract-check
+    # covers the seam, and almost anything can move the seam, so it runs on everything except pure
+    # documentation. Cheap enough that this is the right trade.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "PS104_team_document_set/**"
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_compose_suite:
+        description: "Also bring up the local Compose stack and run scripts/contract_test.sh against it"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contract-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # NAME MUST STAY `contract-test` — see the header. This is a required check on `main`.
+  contract-test:
+    name: contract-test
+    runs-on: ubuntu-24.04
+    # No AWS. This job has no `id-token: write` and no region because it has no business reaching AWS;
+    # a contract check that could assume a deploy role is a contract check that could deploy.
+    steps:
+      # Exact published versions, not commit SHAs. See the pinning note in gateway-ci.yml.
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          # 3.12 — the pinned interpreter, matching both service images (decision D-10).
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            gateway/requirements-dev.txt
+            scorer/requirements-dev.txt
+
+      # Both services' dev dependencies go into ONE environment. That is safe here and it is checked,
+      # not assumed: C-05 below asserts the shared pins are byte-identical, so if they ever diverge this
+      # install is not what breaks — C-05 is, with a message that says which pin moved.
+      #
+      # `--break-system-packages` from the source plan is not used: actions/setup-python provides a
+      # non-externally-managed interpreter, so the flag is a no-op that also teaches the reader to
+      # override PEP 668 where it is not one. Dropped deliberately (rules.md R-52).
+      - name: Install both services' dev dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r gateway/requirements-dev.txt
+          pip install -r scorer/requirements-dev.txt
+
+      # -----------------------------------------------------------------------------------------------
+      # C-01 / C-02 / C-03 / C-04 / C-05 — one script, so a single log tells you the whole contract state
+      # rather than stopping at the first red. It reports every finding and then exits non-zero.
+      # -----------------------------------------------------------------------------------------------
+      - name: Static contract checks (C-01 .. C-05)
+        run: |
+          set -uo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import re
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          ROOT = Path.cwd()
+          FAILURES: list[tuple[str, str]] = []
+          NOTES: list[str] = []
+
+
+          def fail(check: str, message: str) -> None:
+              FAILURES.append((check, message))
+              # ::error makes it a PR annotation, not just a line in a log nobody opens.
+              print(f"::error title={check}::{message}")
+
+
+          def ok(check: str, message: str) -> None:
+              print(f"  ok   {check}  {message}")
+
+
+          # ============================================================================================
+          # C-01  contracts/openapi.yaml parses, and looks like an OpenAPI document.
+          #
+          # "Parses" is the floor, not the check. A YAML file that parses into a string is valid YAML and
+          # a useless schema. The failure this prevents: a bad indent turns `paths:` into a sibling of
+          # `info:`, every generated client silently loses half its operations, and the first symptom is
+          # a 404 during an integration session.
+          # ============================================================================================
+          openapi_path = ROOT / "contracts" / "openapi.yaml"
+          spec = None
+          if not openapi_path.is_file():
+              fail("C-01", "contracts/openapi.yaml is missing")
+          else:
+              try:
+                  import yaml
+
+                  spec = yaml.safe_load(openapi_path.read_text(encoding="utf-8"))
+              except Exception as exc:  # noqa: BLE001 - any parse failure is the finding
+                  fail("C-01", f"contracts/openapi.yaml does not parse: {type(exc).__name__}: {exc}")
+
+          if spec is not None:
+              if not isinstance(spec, dict):
+                  fail("C-01", f"contracts/openapi.yaml parsed as {type(spec).__name__}, not a mapping")
+              else:
+                  version = str(spec.get("openapi", ""))
+                  if not version.startswith("3."):
+                      fail("C-01", f"openapi field is {version!r}; this project targets OpenAPI 3.x")
+                  for key in ("info", "paths", "components"):
+                      if key not in spec:
+                          fail("C-01", f"openapi.yaml has no top-level {key!r} section")
+                  paths = spec.get("paths") or {}
+                  if not isinstance(paths, dict) or not paths:
+                      fail("C-01", "openapi.yaml declares no paths")
+                  else:
+                      ok("C-01", f"openapi.yaml parses; {len(paths)} paths, {len((spec.get('components') or {}).get('schemas') or {})} schemas")
+
+                  # R-07: the action vocabulary is closed. This is the schema-source half of the check;
+                  # contract_test.sh T-07 checks the document the running service SERVES, and pwa-ci
+                  # checks the built bundle. Three places because the vocabulary can be reintroduced at
+                  # any of the three and only one of them is this file.
+                  banned = sorted(
+                      {
+                          m.group(0)
+                          for m in re.finditer(
+                              r"(?<![A-Za-z_])(approve|deny)(?![A-Za-z_])",
+                              openapi_path.read_text(encoding="utf-8"),
+                          )
+                      }
+                  )
+                  if banned:
+                      fail(
+                          "C-01",
+                          "openapi.yaml contains the forbidden action word(s) "
+                          + ", ".join(banned)
+                          + ". The vocabulary is closed to continue|verify|hold|escalate (rules.md R-07): "
+                          "an approve/deny is an irreversible side effect this system must not be able to "
+                          "express, and a schema that can name it is a schema a client can send.",
+                      )
+                  else:
+                      ok("C-01", "no approve/deny in the schema source (R-07)")
+
+          # ============================================================================================
+          # C-02  contracts/voice_scorer.proto compiles.
+          #
+          # Compiled into a temporary descriptor set, NOT into the tree: scripts/gen_proto.sh writes
+          # generated stubs into gateway/ and scorer/, and the per-service CI jobs already regenerate and
+          # diff them. Doing it again here would either duplicate that or, worse, leave modified
+          # generated files behind in a job whose purpose is to read.
+          # ============================================================================================
+          proto_path = ROOT / "contracts" / "voice_scorer.proto"
+          if not proto_path.is_file():
+              fail("C-02", "contracts/voice_scorer.proto is missing")
+          else:
+              with tempfile.TemporaryDirectory() as tmp:
+                  out = Path(tmp) / "descriptor.pb"
+                  proc = subprocess.run(
+                      [
+                          sys.executable,
+                          "-m",
+                          "grpc_tools.protoc",
+                          f"--proto_path={proto_path.parent}",
+                          f"--descriptor_set_out={out}",
+                          proto_path.name,
+                      ],
+                      capture_output=True,
+                      text=True,
+                      check=False,
+                  )
+                  if proc.returncode != 0:
+                      fail("C-02", f"protoc rejected voice_scorer.proto: {proc.stderr.strip()[:600]}")
+                  else:
+                      ok("C-02", f"voice_scorer.proto compiles ({out.stat().st_size} byte descriptor set)")
+
+          # ============================================================================================
+          # C-03  the proto hash is ONE value.
+          #
+          # The Gateway computes it in gateway/app/main.py::_hash_contract("proto") and serves it at
+          # GET /api/v1/version. The Scorer computes it in scorer/app/server.py::_hash_proto() and prints
+          # it in its startup banner and returns it over Health. Those are two independent
+          # implementations of a value that architecture.md 5.1 treats as a single parity-set member.
+          #
+          # The failure this prevents is specific and quiet: someone moves a file and fixes a
+          # `parents[N]` on one side only. Both services then start, both report a proto hash, both look
+          # healthy, and the two hashes differ — so the parity set says the tiers disagree about a
+          # contract that is in fact identical, or (worse, in the other direction) one side is hashing a
+          # stale copy and reporting agreement it has not verified.
+          #
+          # Both are called with their real module import paths so a path regression is what fails, which
+          # is the whole point. Re-implementing sha256(read_bytes()) here would test nothing.
+          # ============================================================================================
+          disk_sha = hashlib.sha256(proto_path.read_bytes()).hexdigest() if proto_path.is_file() else ""
+
+          def call_hasher(label: str, cwd: str, code: str) -> str | None:
+              proc = subprocess.run(
+                  [sys.executable, "-c", code],
+                  cwd=str(ROOT / cwd),
+                  capture_output=True,
+                  text=True,
+                  check=False,
+              )
+              if proc.returncode != 0:
+                  fail(
+                      "C-03",
+                      f"could not call the {label} proto hasher: {proc.stderr.strip()[:400]}",
+                  )
+                  return None
+              return proc.stdout.strip()
+
+          gateway_sha = call_hasher(
+              "gateway",
+              "gateway",
+              "from app.main import _hash_contract; print(_hash_contract('proto'))",
+          )
+          scorer_sha = call_hasher(
+              "scorer",
+              "scorer",
+              "from app.server import _hash_proto; print(_hash_proto())",
+          )
+
+          if gateway_sha is not None and scorer_sha is not None and disk_sha:
+              # "unavailable" is the documented OSError fallback in both implementations. It is a real
+              # answer, not a crash, and it means the process cannot read its own contract file — which
+              # is exactly the state where a service serves traffic while its parity set is unverifiable.
+              for label, value in (("gateway", gateway_sha), ("scorer", scorer_sha)):
+                  if value == "unavailable":
+                      fail(
+                          "C-03",
+                          f"the {label} implementation reports the proto hash as 'unavailable' — it "
+                          "cannot read contracts/voice_scorer.proto from its own working directory. The "
+                          "service would still start and still answer /readyz, with an unverifiable "
+                          "parity set (architecture.md 5.1).",
+                      )
+              if gateway_sha != scorer_sha:
+                  fail(
+                      "C-03",
+                      f"the two proto hashers disagree: gateway={gateway_sha[:16]}, scorer={scorer_sha[:16]}. "
+                      "One of them is reading a different file. The parity set treats this as one value.",
+                  )
+              elif gateway_sha != disk_sha:
+                  fail(
+                      "C-03",
+                      f"both services agree on {gateway_sha[:16]} but contracts/voice_scorer.proto on disk "
+                      f"hashes to {disk_sha[:16]}. Both are resolving a stale or copied proto.",
+                  )
+              else:
+                  ok("C-03", f"proto hash is one value everywhere: {disk_sha[:16]}...")
+
+          # ============================================================================================
+          # C-04  the frame contract DOCUMENT agrees with gateway/app/constants.py.
+          #
+          # gateway/tests/test_constants_parity.py already compares constants.py against
+          # pwa/src/lib/constants.ts, and asserts CONTRACT_ID appears in frame_contract.md. What nothing
+          # checks is the document's own constants TABLE — and frame_contract.md is the normative source
+          # (rules.md R-23; constants.py says so in its docstring). So the document can be edited to say
+          # 664 while both implementations keep saying 648, and the artifact a human reads to settle an
+          # argument becomes the one wrong copy. Two implementations agreeing with each other and
+          # disagreeing with the spec is the hardest version of this bug to find.
+          # ============================================================================================
+          fc_path = ROOT / "contracts" / "frame_contract.md"
+          const_path = ROOT / "gateway" / "app" / "constants.py"
+          if not fc_path.is_file() or not const_path.is_file():
+              fail("C-04", "contracts/frame_contract.md or gateway/app/constants.py is missing")
+          else:
+              # `| `NAME` | `VALUE` | ...`, tolerating bold markers around either cell.
+              row = re.compile(
+                  r"^\|\s*\**`(?P<name>[A-Z_][A-Z0-9_]*)`\**\s*\|\s*\**`(?P<value>[^`]+)`\**",
+                  re.MULTILINE,
+              )
+              doc_values: dict[str, int] = {}
+              for m in row.finditer(fc_path.read_text(encoding="utf-8")):
+                  raw = m.group("value").replace("_", "").replace(",", "").strip()
+                  if re.fullmatch(r"\d+", raw):
+                      doc_values[m.group("name")] = int(raw)
+
+              src = const_path.read_text(encoding="utf-8")
+              code_values: dict[str, int] = {
+                  m.group(1): int(m.group(2).replace("_", ""))
+                  for m in re.finditer(
+                      r"^([A-Z_][A-Z0-9_]*)\s*:\s*Final\[int\]\s*=\s*([0-9_]+)", src, re.MULTILINE
+                  )
+              }
+
+              if not doc_values:
+                  fail(
+                      "C-04",
+                      "parsed zero integer constants out of frame_contract.md's table. Either the table "
+                      "format changed or this parser is now checking nothing — which reads as a pass.",
+                  )
+              else:
+                  shared = sorted(set(doc_values) & set(code_values))
+                  if not shared:
+                      fail(
+                          "C-04",
+                          f"no constant name is present in BOTH frame_contract.md ({len(doc_values)} "
+                          f"found) and constants.py ({len(code_values)} found). A parity check over an "
+                          "empty intersection silently passes.",
+                      )
+                  mismatched = [
+                      f"{n}: document says {doc_values[n]}, constants.py says {code_values[n]}"
+                      for n in shared
+                      if doc_values[n] != code_values[n]
+                  ]
+                  if mismatched:
+                      fail(
+                          "C-04",
+                          "frame_contract.md disagrees with gateway/app/constants.py on "
+                          + "; ".join(mismatched)
+                          + ". frame_contract.md is the normative source (rules.md R-23), so the "
+                          "implementation is what is wrong until a two-key contract change says "
+                          "otherwise (R-22).",
+                      )
+                  elif shared:
+                      ok("C-04", f"{len(shared)} constants agree with frame_contract.md: {', '.join(shared[:6])}...")
+
+                  # Named in the document and absent from the code is worth a note, not a failure: the
+                  # table also lists non-integer entries (SAMPLE_FORMAT, ONNX_INPUT_SHAPE) that
+                  # constants.py expresses differently on purpose (PCM_DTYPE, ONNX_INPUT_SAMPLES).
+                  doc_only = sorted(set(doc_values) - set(code_values))
+                  if doc_only:
+                      NOTES.append(
+                          "frame_contract.md names integer constants that gateway/app/constants.py does "
+                          f"not define under the same name: {', '.join(doc_only)}. Not a failure — some "
+                          "are expressed differently by design — but check the list when the contract "
+                          "changes."
+                      )
+
+          # ============================================================================================
+          # C-05  shared runtime pins are identical across services.
+          #
+          # scorer/Dockerfile's header claims "shared runtime pins identical (byte-for-byte)" as a
+          # parity-set member. Nothing enforced that claim. grpcio, protobuf, and numpy are installed by
+          # BOTH services and cross the wire between them: a protobuf major difference is a serialization
+          # difference, and a numpy difference changes float32 rounding in the PCM conversion path, which
+          # moves a raw_score without changing a shape. A calibration frozen against one and served by
+          # the other is a calibration for a different function.
+          # ============================================================================================
+          def pins(path: Path) -> dict[str, str]:
+              out: dict[str, str] = {}
+              if not path.is_file():
+                  return out
+              for line in path.read_text(encoding="utf-8").splitlines():
+                  line = line.strip()
+                  if not line or line.startswith(("#", "-r ", "--")):
+                      continue
+                  m = re.match(r"^([A-Za-z0-9._-]+)(\[[^\]]*\])?\s*==\s*(\S+)", line)
+                  if m:
+                      out[m.group(1).lower()] = m.group(3)
+              return out
+
+          gw_pins = pins(ROOT / "gateway" / "requirements.txt")
+          sc_pins = pins(ROOT / "scorer" / "requirements.txt")
+          shared_pkgs = sorted(set(gw_pins) & set(sc_pins))
+          if not shared_pkgs:
+              fail("C-05", "no package is pinned in both gateway/requirements.txt and scorer/requirements.txt — one of the files did not parse")
+          else:
+              drift = [
+                  f"{p}: gateway {gw_pins[p]} vs scorer {sc_pins[p]}"
+                  for p in shared_pkgs
+                  if gw_pins[p] != sc_pins[p]
+              ]
+              if drift:
+                  fail(
+                      "C-05",
+                      "shared runtime pins differ between services: "
+                      + "; ".join(drift)
+                      + ". scorer/Dockerfile claims these are identical as part of the parity set "
+                      "(architecture.md 5.1). numpy and protobuf in particular change wire and float "
+                      "behaviour without changing any shape a test would assert on.",
+                  )
+              else:
+                  ok("C-05", f"{len(shared_pkgs)} shared pins agree: {', '.join(shared_pkgs)}")
+
+          # ============================================================================================
+          print()
+          for note in NOTES:
+              print(f"  note {note}")
+          print()
+          if FAILURES:
+              print(f"contract-check: {len(FAILURES)} finding(s):")
+              for check, message in FAILURES:
+                  print(f"  FAIL {check}  {message}")
+              raise SystemExit(1)
+          print("contract-check: static checks C-01..C-05 all pass.")
+          PY
+
+      # -----------------------------------------------------------------------------------------------
+      # C-06  the marker suites.
+      #
+      # `parity` and `contract` are separate markers with separate meanings (both pyproject.toml files
+      # define them identically, on purpose):
+      #   parity   — a parity-set property. Failure is a DEPLOY blocker: the tiers disagree about
+      #              something architecture.md 5.1 says is one value.
+      #   contract — a negative-contract test. Failure means the seam accepts something it must reject,
+      #              which is how a malformed frame becomes a coerced frame (rules.md R-24).
+      #
+      # Each service runs in its own step so the log names which service failed. `--strict-markers`
+      # (pyproject) means a typo'd marker name is an error rather than an empty selection reported green
+      # — the specific way a marker-based gate stops checking anything without ever going red.
+      # -----------------------------------------------------------------------------------------------
+      - name: pytest -m parity (gateway)
+        working-directory: gateway
+        run: pytest -m parity -v
+
+      - name: pytest -m parity (scorer)
+        working-directory: scorer
+        run: pytest -m parity -v
+
+      # -----------------------------------------------------------------------------------------------
+      # The two `contract` steps carry a PASSED-COUNT FLOOR. The audit step below already explains why an
+      # empty selection is safe on its own: it exits 5 ("no tests collected"), 5 is nonzero, the step goes
+      # red. A module that skips in its ENTIRETY lands in the same place — gateway's suite is one
+      # `pytest.importorskip("app.ws.stream")` away from that (gateway/tests/test_ws_negative_contract.py
+      # line 73) and it too exits 5. Neither of those is the hole.
+      #
+      # A PARTIAL skip is. It exits 0. If 40 of the Gateway's 55 cases skip because a fixture went
+      # missing, an env var is unset, or one of the import guards at the top of that module trips, pytest
+      # reports success and this step goes green having verified 15 negative contracts instead of 55.
+      # That is the failure mode worth spending a step on: these are Phase 1 exit criteria (phases.md
+      # section 2.4 — the module's own docstring says a skip here is a FAILURE), and a gate that is
+      # trusted precisely because it is required is the worst possible place for a silent partial pass.
+      # Reporting a quarter-checked suite as a checked suite is what rules.md R-52 forbids.
+      #
+      # So the count is asserted rather than inferred. `passed` is computed from the JUnit `<testsuite>`
+      # attributes as tests - skipped - failures - errors, which is version-independent by design: CI
+      # pins pytest==8.3.4 (gateway/requirements-dev.txt, scorer/requirements-dev.txt) and nothing here
+      # should rest on which exit code which pytest release returns for which flavour of empty run. Those
+      # four attributes have been emitted under a `<testsuites>` root since pytest 3.x and are identical
+      # on 8.3.4 and on 9.x, which is why they are the thing being read.
+      #
+      # THE NUMBERS ARE FLOORS, NOT EQUALITIES. Measured 2026-08-26 on the pinned stack: gateway 55
+      # passed / 0 skipped, scorer 35 passed / 0 skipped. Each floor sits a little under its measurement
+      # so that one legitimately skipped or deleted case does not redden every open PR, while a mass skip
+      # falls straight through it. Raise them when the suites grow. A floor that has to be LOWERED is a
+      # contract change, not a build fix, and wants the reason written next to it (rules.md R-22).
+      # -----------------------------------------------------------------------------------------------
+      - name: pytest -m contract (gateway)
+        working-directory: gateway
+        run: |
+          set -uo pipefail
+          rc=0
+          pytest -m "contract and not integration" -v \
+            --junitxml="$RUNNER_TEMP/contract-gateway.xml" || rc=$?
+          # pytest's own verdict wins, and returns before the floor check runs. A real test failure is
+          # exit 1, an empty selection or a wholly skipped module is 5, a typo'd marker expression under
+          # --strict-markers is 4 — every one of those is already a red step, and layering a second
+          # ::error about the count on top would bury the message that says what actually broke. This is
+          # also the `set -e` trap the capture above is written around: `|| rc=$?` is what stops the
+          # default `bash -e` shell from exiting here before anything gets reported, and the explicit
+          # re-exit is what stops that captured code from being swallowed.
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          CONTRACT_SUITE=gateway CONTRACT_FLOOR=50 \
+          CONTRACT_XML="$RUNNER_TEMP/contract-gateway.xml" python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          suite = os.environ["CONTRACT_SUITE"]
+          floor = int(os.environ["CONTRACT_FLOOR"])
+          root = ET.parse(os.environ["CONTRACT_XML"]).getroot()
+
+          # pytest writes one <testsuite> inside a <testsuites> root. Both shapes are accepted and summed
+          # rather than assuming the nesting: an unreadable report must not become a pass by default.
+          suites = root.findall(".//testsuite") or ([root] if root.tag == "testsuite" else [])
+          if not suites:
+              print(
+                  f"::error title=Unreadable contract report ({suite})::the JUnit report has no "
+                  "<testsuite> element, so the number of tests that passed could not be established. "
+                  "Failing rather than assuming it was fine (rules.md R-52)."
+              )
+              raise SystemExit(1)
+
+          n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "skipped", "failures", "errors")}
+          passed = n["tests"] - n["skipped"] - n["failures"] - n["errors"]
+          print(
+              f"  {suite} contract: {passed} passed  (tests={n['tests']} skipped={n['skipped']} "
+              f"failures={n['failures']} errors={n['errors']}), floor {floor}"
+          )
+          if passed < floor:
+              print(
+                  f"::error title=Contract suite under floor ({suite})::only {passed} contract tests "
+                  f"passed; the floor is {floor}. pytest exited 0 because {n['skipped']} test(s) SKIPPED "
+                  "rather than failed, so this step would otherwise have reported green while checking "
+                  "almost none of the Phase 1 exit criteria. Find why they skipped — missing fixture, "
+                  "unset env var, a tripped import guard, absent generated protobuf stubs — rather than "
+                  "lowering the floor."
+              )
+              raise SystemExit(1)
+          PY
+
+      - name: pytest -m contract (scorer)
+        working-directory: scorer
+        run: |
+          set -uo pipefail
+          rc=0
+          pytest -m "contract and not integration" -v \
+            --junitxml="$RUNNER_TEMP/contract-scorer.xml" || rc=$?
+          # Same ordering as the Gateway step above, for the same reason: pytest's exit code is the more
+          # specific diagnosis, so it is returned unmodified and the floor check never masks it.
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          CONTRACT_SUITE=scorer CONTRACT_FLOOR=32 \
+          CONTRACT_XML="$RUNNER_TEMP/contract-scorer.xml" python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          suite = os.environ["CONTRACT_SUITE"]
+          floor = int(os.environ["CONTRACT_FLOOR"])
+          root = ET.parse(os.environ["CONTRACT_XML"]).getroot()
+
+          suites = root.findall(".//testsuite") or ([root] if root.tag == "testsuite" else [])
+          if not suites:
+              print(
+                  f"::error title=Unreadable contract report ({suite})::the JUnit report has no "
+                  "<testsuite> element, so the number of tests that passed could not be established. "
+                  "Failing rather than assuming it was fine (rules.md R-52)."
+              )
+              raise SystemExit(1)
+
+          n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "skipped", "failures", "errors")}
+          passed = n["tests"] - n["skipped"] - n["failures"] - n["errors"]
+          print(
+              f"  {suite} contract: {passed} passed  (tests={n['tests']} skipped={n['skipped']} "
+              f"failures={n['failures']} errors={n['errors']}), floor {floor}"
+          )
+          if passed < floor:
+              print(
+                  f"::error title=Contract suite under floor ({suite})::only {passed} contract tests "
+                  f"passed; the floor is {floor}. pytest exited 0 because {n['skipped']} test(s) SKIPPED "
+                  "rather than failed, so this step would otherwise have reported green while checking "
+                  "almost none of the negative contracts at the gRPC seam. Find why they skipped — "
+                  "missing fixture, unset env var, a tripped import guard, absent generated protobuf "
+                  "stubs — rather than lowering the floor."
+              )
+              raise SystemExit(1)
+          PY
+
+      # audit/ has no pyproject of its own. It does not need one: audit/tests/conftest.py puts
+      # audit/migrations, audit/, and gateway/ on sys.path and registers the four markers itself, so the
+      # suite behaves identically whether it is invoked from the repo root or from audit/. Invoked from
+      # the root here so one `pytest` call covers it.
+      #
+      # `integration` is deselected because those tests need a real PostgreSQL (AUDIT_TEST_DATABASE_URL).
+      # The static DDL assertions — the section 5.2 deny-list and the exact column allow-list — are the
+      # parity properties, and they run without a database, which is what makes them run on every commit.
+      - name: pytest -m "parity or contract" (audit)
+        run: |
+          set -euo pipefail
+          # A marker expression that selects nothing exits 5 ("no tests collected"), which is neither a
+          # pass nor a failure. Detect the empty-directory case explicitly: a suite that silently checked
+          # zero things must not be reported as a suite that passed (rules.md R-52).
+          if [ -z "$(find audit/tests -name 'test_*.py' -print -quit)" ]; then
+            echo "::warning title=No audit tests collected::audit/tests contains no test modules, so no audit parity or contract property was checked by this run."
+            exit 0
+          fi
+          pytest audit/tests -m "(parity or contract) and not integration" -v --strict-markers
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### contract-check"
+            echo
+            echo "Static checks C-01..C-05 plus the \`parity\` and \`contract\` marker suites."
+            echo
+            echo "**NOT covered here** (rules.md R-52 — say what you dropped):"
+            echo "- The live WebSocket frame contract. Needs a running Gateway; \`scripts/contract_test.sh\`"
+            echo "  and the \`integration\`-marked suites cover it."
+            echo "- Whether the *deployed* image's contract hashes match this tree. That is"
+            echo "  \`scripts/contract_test.sh\` T-05 against a real base URL, and it is the only check that"
+            echo "  can catch an image built from a different \`contracts/\`."
+            echo "- The ONNX fixed-vector CPU/GPU parity gate (frame_contract.md section 6). That needs both"
+            echo "  tiers running with the real model and is a Phase 4 gate, not a PR check."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------------------------------------
+  # The live suite. NOT a required check, and opt-in only.
+  #
+  # Two reasons it is not wired to `pull_request`:
+  #   1. infra/compose/docker-compose.yml does not exist yet. A required check that depends on a file
+  #      another pair has not written would be red for everyone from the first PR, and a permanently red
+  #      required check gets switched off — taking `contract-test` with it.
+  #   2. It needs a local CA, images built from scratch, and Postgres. That is minutes, and flaky
+  #      minutes. scripts/contract_test.sh is designed to be run by a human against a real base URL
+  #      (localhost or CloudFront); this job just automates the localhost case when someone asks for it.
+  # -------------------------------------------------------------------------------------------------
+  compose-contract-test:
+    name: contract_test.sh against local Compose (opt-in)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_compose_suite
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Bring up the local Compose tier
+        run: |
+          set -euo pipefail
+          if [ ! -f infra/compose/docker-compose.yml ]; then
+            echo "::error title=No Compose file::infra/compose/docker-compose.yml does not exist. This job was asked to run the live suite and cannot. Exiting non-zero rather than reporting a pass for a suite that never executed (rules.md R-52)."
+            exit 1
+          fi
+          docker compose -f infra/compose/docker-compose.yml up -d --build
+
+      - name: Wait for the Scorer
+        # No --expect-real: CI has no ONNX artifact, so mock mode is the CORRECT state here and asserting
+        # otherwise would fail an honest stack. The GPU deploy is where --expect-real belongs, and
+        # deploy-runtime.yml is where it is used.
+        run: ./scripts/wait_for_scorer_healthy.sh --target localhost:50051 --timeout 180
+
+      - name: Run the contract suite
+        # --local-contracts is the default for a localhost target: a stack built from this checkout MUST
+        # serve this checkout's contract hashes, and a mismatch there means the images are stale.
+        run: ./scripts/contract_test.sh http://localhost:8080
+
+      - name: Compose logs (on failure)
+        if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml logs --tail=200
+
+      - name: Tear down
+        if: always()
+        # `--volumes` so a Postgres left over from a previous run cannot make the next one pass for the
+        # wrong reason.
+        run: docker compose -f infra/compose/docker-compose.yml down --volumes --remove-orphans

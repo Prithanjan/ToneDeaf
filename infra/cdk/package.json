@@ -1,0 +1,28 @@
+{
+  "name": "sih26104-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SIH26104 Voice Integrity Control Plane — infrastructure. Five dependency-ordered stacks plus one standalone CostSafetyStack.",
+  "//": "VERSION TRAP: `aws-cdk-lib` (the construct library, 2.266.x) and `aws-cdk` (the CLI, 2.1138.x) are SEPARATE version streams. They both start with `2.` and look like they should match — they must not. Pinning the CLI to a library version yields `npm error notarget No matching version found for aws-cdk@2.266.0`. The library is pinned exactly because a minor bump can change synthesised output; the CLI is pinned exactly so CI and a laptop produce the same template.",
+  "bin": {
+    "sih26104-cdk": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "synth": "cdk synth --context deployRuntime=false",
+    "synth:check-zero": "cdk synth ComputeStack --context deployRuntime=false --json | node -e \"const s=JSON.parse(require('fs').readFileSync(0,'utf8'));const r=Object.entries(s.Resources||{});const bad=r.filter(([,v])=>(v.Type==='AWS::ECS::Service'&&v.Properties?.DesiredCount!==0)||(v.Type==='AWS::AutoScaling::AutoScalingGroup'&&!(v.Properties?.MinSize==='0'&&v.Properties?.MaxSize==='0'&&v.Properties?.DesiredCapacity==='0')));if(bad.length){console.error('RUNTIME NOT ZERO:',bad.map(([k])=>k).join(', '));process.exit(1)}console.log('runtime-zero OK: '+r.length+' resources checked')\"",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "aws-cdk": "2.1138.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.7.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.266.0",
+    "constructs": "^10.4.2",
+    "source-map-support": "^0.5.21"
+  }
+}

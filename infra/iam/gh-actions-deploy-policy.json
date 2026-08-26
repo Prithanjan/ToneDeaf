@@ -1,0 +1,414 @@
+{
+  "//": [
+    "PERMISSIONS POLICY for the GitHub Actions deploy role (rules.md R-55).",
+    "Attach to the same role as gh-actions-trust-policy.json. That file says WHO may assume the role;",
+    "this one says WHAT the role may then do.",
+    "",
+    "⚠️ DO NOT PASS THIS FILE TO THE AWS CLI. It is annotated source. The `\"//\"` keys below are not",
+    "legal in an IAM policy document — the grammar admits only Version/Id/Statement at the top level",
+    "and Sid/Effect/Principal/NotPrincipal/Action/NotAction/Resource/NotResource/Condition inside a",
+    "statement — and AWS rejects the whole document with `MalformedPolicyDocument: Syntax errors in",
+    "policy`, naming no key and no line. Render it first, which also substitutes the placeholders:",
+    "",
+    "    python scripts/render_iam_policies.py --account-id <ID> --github-owner <O> --github-repo <R>",
+    "",
+    "and use the output in infra/iam/rendered/. The renderer refuses on any leftover placeholder and",
+    "checks the 10,240-char inline-policy limit, so both of the late confusing failures are moved here.",
+    "",
+    "NOT AdministratorAccess. R-55 forbids it, and the reason is specific rather than ceremonial: this",
+    "role is assumable by an automated system triggered by a git push. Its blast radius is whatever a",
+    "compromised or merely mistaken workflow file can reach, so the interesting question is not 'can it",
+    "deploy' but 'what is the worst a bad `run:` line can do'. With AdministratorAccess the answer is",
+    "'anything in the account'. With this policy the answer is 'deploy this project, push these three",
+    "image repositories, and stop the runtime'.",
+    "",
+    "THE SHAPE IS UNUSUAL AND DELIBERATE: this policy grants almost nothing DIRECTLY.",
+    "",
+    "  CDK v2 does not create resources with the caller's own credentials. `cdk deploy` assumes the four",
+    "  bootstrap roles (`cdk-hnb659fds-*`) that `cdk bootstrap` provisioned, and those roles do the",
+    "  work — CloudFormation itself runs as `cfn-exec-role`. So statement 1 is the whole deploy grant,",
+    "  and it is four `sts:AssumeRole` calls. There is no `ec2:*`, no `rds:*`, no `ecs:CreateService`",
+    "  here, and their absence is not an oversight to fix the first time a deploy fails.",
+    "",
+    "  Consequence worth stating plainly: the privilege boundary is the CFN execution role, which IS",
+    "  broadly privileged. This policy does not make a malicious workflow harmless — it makes it",
+    "  auditable, because every mutation arrives through CloudFormation as a stack event with a diff,",
+    "  rather than as an out-of-band API call that leaves no trace in the stack's history.",
+    "",
+    "REPLACE BEFORE USE: <AWS_ACCOUNT_ID>. Region literals are already pinned (ap-south-1 for the",
+    "runtime, us-east-1 for the cost-safety plane) — that pinning is load-bearing, see statement 8.",
+    "A literal <AWS_ACCOUNT_ID> fails closed: an unparseable ARN matches nothing.",
+    "",
+    "IF A DEPLOY FAILS WITH AccessDenied: add the one action the error names, scoped to the one resource",
+    "it names. Do not widen to a service wildcard, and do not attach AdministratorAccess 'temporarily' —",
+    "the temporary attachment is the one that is still there at the demo (aws-setup-instructions.md §4.3)."
+  ],
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "//": [
+        "1. THE DEPLOY GRANT, in full.",
+        "",
+        "Exactly the four roles `cdk bootstrap` creates under the default `hnb659fds` qualifier:",
+        "  deploy-role           — drives CloudFormation",
+        "  file-publishing-role  — uploads templates and assets to the staging bucket",
+        "  image-publishing-role — pushes CDK-built container assets to the staging ECR repo",
+        "  lookup-role           — read-only context lookups (this is what resolves availability-zones)",
+        "",
+        "The trailing `-<AWS_ACCOUNT_ID>-<region>` is spelled out per region rather than wildcarded so",
+        "that this role cannot assume a bootstrap role in a region nobody is watching. `hnb659fds` is a",
+        "constant, not a hash: it is the default qualifier and it is identical in every account. If the",
+        "account was bootstrapped with `--qualifier`, these eight ARNs are wrong and every deploy fails",
+        "with a clear AssumeRole error naming the role it wanted.",
+        "",
+        "us-east-1 is here because CostSafetyStack deploys there (bin/app.ts) and needs its own bootstrap."
+      ],
+      "Sid": "AssumeCdkBootstrapRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": [
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-deploy-role-<AWS_ACCOUNT_ID>-ap-south-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-file-publishing-role-<AWS_ACCOUNT_ID>-ap-south-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-image-publishing-role-<AWS_ACCOUNT_ID>-ap-south-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-lookup-role-<AWS_ACCOUNT_ID>-ap-south-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-deploy-role-<AWS_ACCOUNT_ID>-us-east-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-file-publishing-role-<AWS_ACCOUNT_ID>-us-east-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-image-publishing-role-<AWS_ACCOUNT_ID>-us-east-1",
+        "arn:aws:iam::<AWS_ACCOUNT_ID>:role/cdk-hnb659fds-lookup-role-<AWS_ACCOUNT_ID>-us-east-1"
+      ]
+    },
+    {
+      "//": [
+        "2. Bootstrap version check. The CDK CLI reads this parameter to decide whether the account's",
+        "bootstrap stack is new enough for the template it is about to deploy. Read-only, one parameter.",
+        "Denying it produces `SSM parameter /cdk-bootstrap/hnb659fds/version not found` — which reads as",
+        "'the account is not bootstrapped' and sends you to re-bootstrap a perfectly good account."
+      ],
+      "Sid": "ReadCdkBootstrapVersion",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": [
+        "arn:aws:ssm:ap-south-1:<AWS_ACCOUNT_ID>:parameter/cdk-bootstrap/hnb659fds/version",
+        "arn:aws:ssm:us-east-1:<AWS_ACCOUNT_ID>:parameter/cdk-bootstrap/hnb659fds/version"
+      ]
+    },
+    {
+      "//": [
+        "3. ECR login. `ecr:GetAuthorizationToken` does not support resource-level permissions — it mints",
+        "a registry-wide token, so `*` is the only scope IAM can express here, not a shortcut. The token",
+        "it returns is still constrained by statement 4: it authenticates to the registry, it does not",
+        "authorise a push."
+      ],
+      "Sid": "EcrLoginRequiresWildcard",
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "//": [
+        "4. Push and pull, on the three project repositories only.",
+        "",
+        "`BatchGetImage` and `DescribeImages` are what let CI resolve a pushed tag back to its sha256",
+        "digest, which is the value passed to `cdk deploy --context gatewayImageDigest=` (R-51, R-56).",
+        "",
+        "NOT GRANTED, on purpose:",
+        "  ecr:CreateRepository  — the three repositories are Phase-0 infrastructure with immutable tags",
+        "                          and lifecycle policies. A workflow that can create a repository can",
+        "                          create a fourth one without those properties and push a mutable tag.",
+        "  ecr:DeleteRepository, ecr:BatchDeleteImage — tag immutability is the promotion guarantee; a",
+        "                          delete grant is a way around it. Retention is the lifecycle policy's",
+        "                          job (keep-last-15), and that runs as ECR, not as this role.",
+        "  ecr:PutImageTagMutability, ecr:PutLifecyclePolicy — same reason: a workflow must not be able",
+        "                          to relax the constraints the workflow is audited against."
+      ],
+      "Sid": "PushProjectImages",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeImages",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": [
+        "arn:aws:ecr:ap-south-1:<AWS_ACCOUNT_ID>:repository/sih26104/gateway",
+        "arn:aws:ecr:ap-south-1:<AWS_ACCOUNT_ID>:repository/sih26104/scorer-gpu",
+        "arn:aws:ecr:ap-south-1:<AWS_ACCOUNT_ID>:repository/sih26104/scorer-cpu"
+      ]
+    },
+    {
+      "//": [
+        "5. stop-runtime.yml — the mutation half. This is the workflow that must run at the end of every",
+        "session without exception (rules.md R-30), so its permissions are the ones that must never be",
+        "the reason it fails.",
+        "",
+        "TWO ACTIONS, NOT ONE, and the second is the one people leave out. Setting the ECS services to",
+        "desired 0 stops the tasks and leaves the `g4dn.xlarge` running and billing. Setting the ASG's",
+        "DesiredCapacity to 0 without also setting MinSize/MaxSize to 0 lets the ASG restore capacity on",
+        "its next scaling evaluation. Both grants are required for 'stop' to mean stopped; the same",
+        "reasoning is implemented in lambda/runtime-stopper/index.py.",
+        "",
+        "The ASG ARN wildcards ONLY the UUID segment that AWS generates. The group NAME is exact, so this",
+        "cannot resize an unrelated auto-scaling group in the account."
+      ],
+      "Sid": "StopRuntime",
+      "Effect": "Allow",
+      "Action": ["ecs:UpdateService", "autoscaling:UpdateAutoScalingGroup"],
+      "Resource": [
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:service/sih26104/gateway",
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:service/sih26104/scorer",
+        "arn:aws:autoscaling:ap-south-1:<AWS_ACCOUNT_ID>:autoScalingGroup:*:autoScalingGroupName/scorer-gpu-asg"
+      ]
+    },
+    {
+      "//": [
+        "6. Verification reads, and the migration task — all resource-scoped.",
+        "",
+        "⚠️ THIS STATEMENT MUST NOT CONTAIN `*` IN Resource. A single `*` alongside specific ARNs does not",
+        "narrow anything: IAM evaluates the Resource list as OR, so one wildcard entry grants every action",
+        "in the statement on every resource. `ecs:RunTask` would then be account-wide, which is precisely",
+        "the grant the next paragraph claims to prevent. Actions that genuinely need `*` are in statement 6b.",
+        "",
+        "`ecs:RunTask` on `gateway-migrate` only, and only in the `sih26104` cluster:",
+        "  - the `:*` suffix is the task-definition REVISION, which increments on every deploy. Pinning a",
+        "    revision would break the next deploy; the FAMILY is exact, so this cannot launch the Scorer",
+        "    task definition, which is the one that costs money.",
+        "  - the `ecs:cluster` condition is the second half. Without it, a matching task definition could",
+        "    be run in any cluster in the account, including one with different security groups.",
+        "",
+        "These reads are what let stop-runtime.yml PROVE it worked — print runningCount and DesiredCapacity",
+        "after the update rather than trusting that a successful API call meant a stopped instance. A stop",
+        "workflow that reports success without verifying is how a GPU bills through a weekend."
+      ],
+      "Sid": "VerifyAndMigrateScoped",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeClusters",
+        "ecs:DescribeServices",
+        "ecs:DescribeTasks",
+        "ecs:RunTask"
+      ],
+      "Resource": [
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:cluster/sih26104",
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:service/sih26104/gateway",
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:service/sih26104/scorer",
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:task/sih26104/*",
+        "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:task-definition/gateway-migrate:*"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "ecs:cluster": "arn:aws:ecs:ap-south-1:<AWS_ACCOUNT_ID>:cluster/sih26104"
+        }
+      }
+    },
+    {
+      "//": [
+        "6b. The reads IAM cannot scope, isolated so the wildcard is visible and bounded.",
+        "",
+        "`autoscaling:DescribeAutoScalingGroups` has no resource-level support at all — it returns groups",
+        "and filters by name in the request, not in the policy. `ecs:ListTasks` likewise takes no resource",
+        "constraint for the cluster-listing form this uses, and `ecs:DescribeTaskDefinition` has no",
+        "resource type either (a task definition is not an ARN you can scope a Describe to).",
+        "",
+        "`ec2:DescribeInstances` IS THE ONE WORTH ARGUING ABOUT, so here is the argument. It is granted for",
+        "stop-runtime.yml check V-C, which sweeps the region for running `g4dn.xlarge` instances. That check",
+        "exists because V-A (ECS tasks == 0) and V-B (ASG desired == 0) are authoritative only about things",
+        "the ASG owns. An instance launched by hand during a debugging session — outside the ASG, outside",
+        "ECS — is invisible to both, and would bill at roughly $0.53/hour for as long as nobody looks.",
+        "R-30 makes stop-runtime.yml the load-bearing cost control of this entire project, so its blind",
+        "spots matter more than one extra read.",
+        "",
+        "The cost of granting it, stated rather than glossed: `DescribeInstances` takes no resource",
+        "constraint, so this is account-and-region-wide visibility of instance metadata. In a single-",
+        "purpose project account that is a modest widening of a read surface that already includes ECS",
+        "services, clusters, tasks and Auto Scaling groups. It discloses topology; it changes nothing.",
+        "",
+        "Kept in their own statement for one reason: a wildcard in a mixed statement is invisible, and a",
+        "wildcard in a statement containing only Describe/List actions is self-evidently read-only.",
+        "Anything added here later must be justified against that sentence. If it mutates, it does not",
+        "belong in this statement — see statement 6c, which exists because of exactly that rule."
+      ],
+      "Sid": "ReadOnlyCallsWithoutResourceLevelSupport",
+      "Effect": "Allow",
+      "Action": [
+        "autoscaling:DescribeAutoScalingGroups",
+        "ec2:DescribeInstances",
+        "ecs:DescribeTaskDefinition",
+        "ecs:ListTasks"
+      ],
+      "Resource": "*"
+    },
+    {
+      "//": [
+        "6c. `ecs:RegisterTaskDefinition` — a mutation that IAM cannot scope, and why that is acceptable.",
+        "",
+        "REQUIRED BY deploy-runtime.yml, and the reason is the digest promotion rule. `update-service",
+        "--force-new-deployment` only re-pulls whatever the existing task definition already points at, so",
+        "if that were a tag the digest inputs to the workflow would be decorative — the run would report a",
+        "digest and ship something else. The workflow therefore reads the current task definition, swaps",
+        "the container image for the digest-pinned reference, registers a new revision, and points the",
+        "service at it. That is what makes the digest the deployment unit (R-51, R-56).",
+        "",
+        "`RegisterTaskDefinition` has no resource types, so `*` is the only expressible scope. The real",
+        "control on it is **statement 7**, not this one: registering a task definition is inert unless you",
+        "can also pass an execution role to it, and `iam:PassRole` here is bounded to `ComputeStack-*` and",
+        "to `ecs-tasks.amazonaws.com`. A revision registered with a role this policy cannot pass will fail",
+        "to launch. That is the security argument, and it is worth stating rather than leaving the reader",
+        "to assume a bare `*` on a mutation was an oversight.",
+        "",
+        "Registering a revision outside CloudFormation DOES create stack drift on the task definition, and",
+        "that is understood and accepted: the next `cdk deploy` re-pins the family from the digest passed",
+        "as `--context gatewayImageDigest`, so the drift is corrected by the same value that caused it.",
+        "`ecs:DeregisterTaskDefinition` is deliberately NOT granted — old revisions are the audit trail of",
+        "what actually ran."
+      ],
+      "Sid": "RegisterDigestPinnedTaskDefinitions",
+      "Effect": "Allow",
+      "Action": "ecs:RegisterTaskDefinition",
+      "Resource": "*"
+    },
+    {
+      "//": [
+        "6d. CloudWatch Logs read — the R-45 execution-provider check.",
+        "",
+        "GRANTED DELIBERATELY, ADDED AFTER THE FACT, and the reason is worth recording. `deploy-runtime.yml`",
+        "step V-2 tries to read the Scorer's log group to confirm it came up on `CUDAExecutionProvider`.",
+        "It was written to expect this permission to be ABSENT and to degrade to a warning naming exactly",
+        "this action and ARN — which was correct and honest behaviour against the enumerated permission set",
+        "in aws-setup-instructions.md §3.3.",
+        "",
+        "But a permanent 'provider NOT verified by CI' warning is a bad equilibrium. R-45 makes a silent",
+        "CPU fallback a **failed deploy**, not a warning, because healthy-but-silently-CPU still produces",
+        "numbers — and every latency figure recorded that day is then invalid in a way nobody thinks to",
+        "check. Trading one narrow read permission for automated verification of that property is clearly",
+        "the right side of the trade.",
+        "",
+        "Scoped to `/ecs/sih26104/*` and to `FilterLogEvents` only: no `DescribeLogGroups` (the workflow",
+        "names the group explicitly), no `GetLogEvents`, no write, and nothing outside the project's own",
+        "log groups. Note the trailing `:*` on the ARN — a log-group ARN in a policy needs it to match the",
+        "log streams within, and omitting it produces an AccessDenied that looks like the wrong action name."
+      ],
+      "Sid": "ReadScorerLogsForProviderCheck",
+      "Effect": "Allow",
+      "Action": "logs:FilterLogEvents",
+      "Resource": "arn:aws:logs:ap-south-1:<AWS_ACCOUNT_ID>:log-group:/ecs/sih26104/*:*"
+    },
+    {
+      "//": [
+        "7. iam:PassRole, scoped — the statement R-55 names explicitly.",
+        "",
+        "`ecs:RunTask` requires passing the task's execution role and task role, and `iam:PassRole` is the",
+        "action that most often gets granted as `Resource: \"*\"`. That is a privilege-escalation primitive,",
+        "not merely untidy: with `PassRole: *` this role can hand ANY role in the account to a service it",
+        "controls the input of, and read that role's credentials out of the task it just launched. The",
+        "account's most privileged role is reachable that way.",
+        "",
+        "Two independent narrowings, both required:",
+        "  Resource  — `ComputeStack-*` only. CDK names roles `<StackName>-<LogicalId><Hash>`, so this",
+        "              matches the Gateway/Scorer execution and task roles and nothing outside the stack.",
+        "              It is a prefix wildcard because the hash is not knowable when this file is written.",
+        "  Condition — `iam:PassedToService` = ecs-tasks.amazonaws.com. Even for a matching role name, it",
+        "              may only be passed to ECS tasks. Passing a ComputeStack role to, say, EC2 or Lambda",
+        "              is denied. This closes the gap the prefix wildcard leaves open."
+      ],
+      "Sid": "PassEcsTaskRolesOnly",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/ComputeStack-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "//": [
+        "7b. Invoking the RuntimeStopper directly.",
+        "",
+        "The Lambda in CostSafetyStack exists to be triggered by a Budget alarm, but the same function is",
+        "also the most reliable manual stop: one call, and it performs BOTH the service stop and the",
+        "capacity stop, in the right order, with no chance of a workflow doing half the job.",
+        "",
+        "us-east-1, not ap-south-1 — the function lives with the budget that triggers it and acts",
+        "cross-region on the runtime (bin/app.ts). Getting this region wrong yields a",
+        "ResourceNotFoundException on the one call an operator makes when they are already worried about",
+        "a bill."
+      ],
+      "Sid": "InvokeRuntimeStopper",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID>:function:sih26104-runtime-stopper"
+    },
+    {
+      "//": [
+        "8. The region fence, and the subtlety that makes it easy to get wrong.",
+        "",
+        "An explicit Deny overrides every Allow, including any policy attached to this role later. It is",
+        "here because region drift is not a visible failure: a deploy that lands in us-west-2 succeeds,",
+        "works, bills, and is not in the region anyone opens the console to (rules.md, region discipline).",
+        "",
+        "WHY GLOBAL SERVICES ARE IN NotAction. For negated conditions — StringNotEquals, StringNotLike —",
+        "an ABSENT context key makes the condition evaluate TRUE. So on any request that carries no",
+        "`aws:RequestedRegion` at all, `StringNotEquals` matches and this statement DENIES. Global service",
+        "calls are exactly the requests that may not carry it, so without this NotAction list the fence",
+        "would deny `sts:AssumeRole` — statement 1 — and nothing would deploy at all. The failure is",
+        "immediate and total, which is the good case; the bad case is a subtler one denied only sometimes.",
+        "",
+        "cloudfront and budgets are listed because the CFN execution role acts on them via us-east-1 and",
+        "because both are genuinely global. us-east-1 is in the allow list regardless — that is the one",
+        "documented regional exception (cdk.json `// region`), needed for Budgets and for the Phase-4 ACM",
+        "certificate. Adding a third region here is a decision to make deliberately, not to fix a deploy."
+      ],
+      "Sid": "DenyOutsideApprovedRegions",
+      "Effect": "Deny",
+      "NotAction": [
+        "budgets:*",
+        "cloudfront:*",
+        "iam:*",
+        "organizations:*",
+        "s3:GetBucketLocation",
+        "s3:ListAllMyBuckets",
+        "sts:*",
+        "support:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": ["ap-south-1", "us-east-1"]
+        }
+      }
+    },
+    {
+      "//": [
+        "9. Deny the credential shapes this project does not use.",
+        "",
+        "The trust policy already makes this role OIDC-only, so these denies are redundant TODAY. They",
+        "are here because the failure they prevent is a quiet one: someone debugging a broken workflow",
+        "creates an access key 'just to test', it works, and the project now has a long-lived credential",
+        "that no longer appears in any workflow file. R-55 says no long-lived keys; this makes the rule",
+        "self-enforcing rather than a thing to remember.",
+        "",
+        "The role-mutation denies matter more than they look. Without them this role can attach",
+        "AdministratorAccess to itself and every scope above becomes advisory — which is the specific",
+        "escalation that makes a 'least privilege' policy a decoration."
+      ],
+      "Sid": "DenySelfEscalationAndLongLivedCredentials",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:AttachUserPolicy",
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:CreateUser",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateLoginProfile"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

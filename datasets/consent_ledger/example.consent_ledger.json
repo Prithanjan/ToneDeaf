@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0.0",
+  "ledger_id": "example-ledger-not-real-consent",
+  "created_at": "2026-01-01T00:00:00Z",
+
+  "consent_form_versions": [
+    {
+      "consent_basis": "team-member-consent-v1",
+      "form_sha256": "e11b3795c1843b80a11f92bb95415e10a3abbcac4506f3debe13a8fbd7c50487",
+      "language": "en-IN",
+      "plain_language_summary": "EXAMPLE TEXT, NOT A REAL FORM. We will record your voice, use the recordings to train and test a synthetic-speech detector, and delete them by the date shown. We will not make a synthetic copy of your voice unless you tick that separately."
+    },
+    {
+      "consent_basis": "synthetic-derived-from-consented-parent",
+      "form_sha256": "012d787afa7349a31e2a1be3d51bd9738637244039bed298d3f98fe5a419c078",
+      "language": "en-IN",
+      "plain_language_summary": "EXAMPLE TEXT, NOT A REAL FORM. We will generate synthetic speech that imitates your voice, use it only as attack data for testing the detector, never publish the audio, and delete it by the date shown."
+    }
+  ],
+
+  "records": [
+    {
+      "consent_record_id": "example-consent-0002",
+      "subject_id_hash": "0000000000000000000000000000000000000000000000000000000000000002",
+      "consent_basis": "synthetic-derived-from-consented-parent",
+      "consent_form_sha256": "012d787afa7349a31e2a1be3d51bd9738637244039bed298d3f98fe5a419c078",
+      "consent_obtained_at": "2025-12-01T09:00:00Z",
+      "consent_scope": [
+        "bonafide_recording_for_training",
+        "synthetic_clone_of_own_voice",
+        "publication_of_aggregate_metrics"
+      ],
+      "synthetic_cloning_permitted": true,
+      "retention_expiry": "2027-01-01",
+      "covers_sample_ids": ["example-spoof-vits-0001"],
+      "capture_session_id": "example-session-a",
+      "withdrawal": {
+        "withdrawn": false,
+        "withdrawn_at": null,
+        "deletion_completed_at": null
+      },
+      "notes": "Cloning permitted, so this subject's audio may be used as a generator source. retention_expiry matches the manifest record's."
+    },
+
+    {
+      "consent_record_id": "example-consent-0003",
+      "subject_id_hash": "0000000000000000000000000000000000000000000000000000000000000003",
+      "consent_basis": "team-member-consent-v1",
+      "consent_form_sha256": "e11b3795c1843b80a11f92bb95415e10a3abbcac4506f3debe13a8fbd7c50487",
+      "consent_obtained_at": "2025-12-01T09:30:00Z",
+      "consent_scope": [
+        "bonafide_recording_for_training",
+        "demo_playback_to_third_parties",
+        "retention_beyond_event_window"
+      ],
+      "synthetic_cloning_permitted": false,
+      "retention_expiry": "2026-12-31",
+      "covers_sample_ids": ["example-demo-consented-0001"],
+      "capture_session_id": "example-session-b",
+      "withdrawal": {
+        "withdrawn": false,
+        "withdrawn_at": null,
+        "deletion_completed_at": null
+      },
+      "notes": "Playback to judges is permitted; cloning is NOT. Recording and cloning are separate permissions and this record exercises exactly one of them."
+    },
+
+    {
+      "consent_record_id": "example-consent-0004-withdrawn",
+      "subject_id_hash": "0000000000000000000000000000000000000000000000000000000000000004",
+      "consent_basis": "team-member-consent-v1",
+      "consent_form_sha256": "e11b3795c1843b80a11f92bb95415e10a3abbcac4506f3debe13a8fbd7c50487",
+      "consent_obtained_at": "2025-12-01T10:00:00Z",
+      "consent_scope": ["bonafide_recording_for_training"],
+      "synthetic_cloning_permitted": false,
+      "retention_expiry": "2026-12-31",
+      "covers_sample_ids": ["example-withdrawn-original-0001"],
+      "capture_session_id": "example-session-c",
+      "withdrawal": {
+        "withdrawn": true,
+        "withdrawn_at": "2026-01-15T11:00:00Z",
+        "deletion_completed_at": "2026-01-15T14:20:00Z",
+        "deletion_evidence": "manifest revision example-manifest-not-for-training; sample and its augmented children removed together"
+      },
+      "notes": "WITHDRAWN. The record stays in the ledger after deletion; removing it would erase the evidence that the withdrawal was honoured. Its sample_id is deliberately absent from example.manifest.json, and that absence plus deletion_completed_at is the proof."
+    }
+  ]
+}

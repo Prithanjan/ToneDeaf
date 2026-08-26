@@ -1,0 +1,26 @@
+# Gateway runtime dependencies — EXACT pins.
+#
+# Pinned exactly, not with ranges, because a range makes the parity set unverifiable: two tiers
+# built a day apart would carry different transitive versions while claiming the same release
+# (architecture.md section 5.1, rules.md R-06). Versions are those pinned in the blueprint's tech
+# stack table.
+#
+# Python 3.12 (decision D-10). NOT 3.14 — webrtcvad-wheels and onnxruntime wheels for 3.14 are not
+# assured, and this workstation has 3.14.5 installed. Use `uv python install 3.12` locally; the
+# container pins python:3.12-slim.
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-jose[cryptography]==3.3.0
+httpx==0.28.1
+asyncpg==0.30.0
+alembic==1.14.0
+sqlalchemy==2.0.36
+grpcio==1.68.1
+grpcio-tools==1.68.1
+protobuf==5.29.2
+numpy==2.1.3
+webrtcvad-wheels==2.0.14
+PyYAML==6.0.2

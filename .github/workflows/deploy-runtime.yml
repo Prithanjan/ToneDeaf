@@ -1,0 +1,776 @@
+# deploy-runtime — the ONLY path in this repository that starts GPU spend.
+#
+# ============================================================================================
+# READ THIS BEFORE EDITING
+# ============================================================================================
+# rules.md R-29: no `git push` can start GPU spend. That rule is only true for as long as this file is
+# the single place with `autoscaling update-auto-scaling-group` and `ecs update-service --desired-count`
+# in it, and this file is triggered by `workflow_dispatch` and nothing else. There is no `push`, no
+# `pull_request`, no `release`, no `schedule`, and no `repository_dispatch` below. Adding any of them
+# converts a routine merge into a billable event.
+#
+# THE COST GATE IS A TYPED STRING, NOT A CHECKBOX — AND THIS DEPARTS FROM THE SOURCE DOCUMENTS
+# -------------------------------------------------------------------------------------------
+# phases.md section 4.2 and aws-setup-instructions.md section 11 both describe `confirm_cost_aware` as a
+# boolean guarded with `if: ${{ inputs.confirm_cost_aware }}`. This workflow requires an exact typed
+# phrase instead. Named as a deliberate difference, per rules.md R-54, because the reasons are mechanical
+# rather than stylistic:
+#
+#   1. `type: boolean` renders in the GitHub UI as a checkbox. Ticking a box is one click in the same
+#      motion as pressing "Run workflow" — it is not a separate deliberate act, which is the entire
+#      function of a cost gate.
+#   2. Worse, `if: ${{ inputs.confirm_cost_aware }}` on a job makes an unconfirmed run SKIP that job.
+#      A workflow run whose jobs were all skipped is reported by GitHub as a green tick. So the
+#      documented form makes "I forgot to confirm" look exactly like "the deploy succeeded" on the
+#      Actions page. A cost control must not have that failure mode.
+#
+# So the gate is: a `required: true` string input that must equal an exact phrase, checked in the FIRST
+# job, which fails — not skips — when it does not match. `confirm_cost_aware=true` (the runbook's
+# literal command) is therefore REJECTED, on purpose, with a message that quotes the phrase to type.
+#
+# THE GATE RUNS BEFORE ANY AWS CREDENTIAL EXISTS
+# ---------------------------------------------
+# The `cost-gate` job has no `id-token: write` and no `configure-aws-credentials` step. It cannot reach
+# AWS even if every check in it were commented out. Every job that can reach AWS `needs: cost-gate`, so
+# an unconfirmed run never mints a token at all. Validating the confirmation in the same job that has
+# already assumed the deploy role would mean an unconfirmed run had a live AWS identity for a few
+# seconds — small, and unnecessary.
+#
+# PROMOTION IS BY DIGEST. NOTHING IS BUILT HERE.
+# ---------------------------------------------
+# rules.md R-56. There is no `docker build` in this file. The two digest inputs must already exist in
+# ECR, put there by gateway-ci.yml / scorer-ci.yml on a prior merge, and `verify-digests` proves they do
+# before anything scales. A rebuild at deploy time would produce different bytes from the same source
+# (apt mirror state, wheel resolution order, timestamps), so the digest a release manifest recorded
+# would stop describing what is running — and the manifest is the artifact that makes the parity claim
+# in architecture.md 5.1 checkable rather than verbal (R-51).
+#
+# The digests are threaded through job outputs, not re-derived per job, so every job in the chain acts
+# on the same two strings the human typed and `verify-digests` confirmed.
+name: deploy-runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      gateway_image_digest:
+        description: "Gateway image digest from gateway-ci (sha256:...). NOT a tag."
+        required: true
+        type: string
+      scorer_image_digest:
+        description: "Scorer GPU image digest from scorer-ci (sha256:...). NOT a tag."
+        required: true
+        type: string
+      confirm_cost_aware:
+        description: "Type exactly: I understand this starts GPU spend"
+        required: true
+        type: string
+      expect_provider:
+        description: "Execution provider the Scorer must report. A silent CPU fallback on the GPU tier is a failure, not a degradation (R-45)."
+        required: false
+        default: CUDAExecutionProvider
+        type: string
+      stop_on_failure:
+        description: "If the deploy fails after capacity was raised, zero everything automatically. Turn OFF only to debug a live failure."
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  # Serialise deploys against each other, and never cancel one mid-flight: a cancelled run between
+  # "ASG scaled to 1" and "services updated" leaves a GPU instance running with nothing on it, which is
+  # the most expensive possible state.
+  #
+  # Deliberately NOT sharing a concurrency group with stop-runtime.yml. Sharing would queue a stop
+  # behind an in-flight deploy, and an operator who presses stop and watches it sit in "queued" concludes
+  # that stop is broken. Stop must always be able to run immediately. The cost of not sharing is that a
+  # stop issued during a deploy can be overwritten by the deploy's later steps — so if you do that, check
+  # this run's summary and run stop-runtime again afterwards.
+  group: deploy-runtime
+  cancel-in-progress: false
+
+jobs:
+  # =================================================================================================
+  # JOB 1 — THE GATE. No AWS permissions. Fails closed.
+  # =================================================================================================
+  cost-gate:
+    name: cost gate (typed confirmation + digest shape)
+    runs-on: ubuntu-24.04
+    # No `id-token: write`. No region. This job cannot reach AWS, by construction rather than by
+    # convention — which is what makes "the gate runs before any credential exists" a fact about the
+    # workflow rather than a claim about step ordering.
+    permissions:
+      contents: read
+    outputs:
+      gateway_digest: ${{ steps.check.outputs.gateway_digest }}
+      scorer_digest: ${{ steps.check.outputs.scorer_digest }}
+    steps:
+      - name: Validate the confirmation phrase and the digest shapes
+        id: check
+        env:
+          # Read through env, not by interpolating `${{ inputs.* }}` directly into the script body.
+          # Interpolation happens before bash sees the line, so a value containing a quote or a `;` would
+          # be pasted into the shell as syntax. An input to a workflow that starts billable capacity is
+          # the last place to leave a shell-injection seam.
+          CONFIRM: ${{ inputs.confirm_cost_aware }}
+          GATEWAY_DIGEST: ${{ inputs.gateway_image_digest }}
+          SCORER_DIGEST: ${{ inputs.scorer_image_digest }}
+        run: |
+          set -uo pipefail
+          EXPECTED="I understand this starts GPU spend"
+          failed=0
+
+          # Trim leading/trailing whitespace only. Copy-pasting a phrase picks up a stray space, and
+          # rejecting that teaches people to paste from a scratch file rather than to read the phrase.
+          # Case and wording are NOT normalised: typing it is the act being demanded.
+          typed="$(printf '%s' "${CONFIRM}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+          if [ "$typed" != "$EXPECTED" ]; then
+            echo "::error title=Cost gate REJECTED::confirm_cost_aware must be typed exactly. Expected: '${EXPECTED}'"
+            {
+              echo "### deploy-runtime — cost gate REJECTED"
+              echo
+              echo "Nothing was deployed. No AWS credential was requested. No spend started."
+              echo
+              echo "\`confirm_cost_aware\` must be typed **exactly**:"
+              echo
+              echo '```'
+              echo "${EXPECTED}"
+              echo '```'
+              echo
+              echo "**\`true\` is not accepted**, and that is deliberate — see the header of"
+              echo "\`.github/workflows/deploy-runtime.yml\`. A checkbox is one click in the same motion as"
+              echo "\"Run workflow\"; a boolean guard (\`if: \${{ inputs.confirm_cost_aware }}\`) makes an"
+              echo "unconfirmed run report as a **green tick**, because a run whose jobs were all skipped"
+              echo "is reported as success. This starts a \`g4dn.xlarge\` and it should take a sentence."
+              echo
+              echo "\`\`\`bash"
+              echo "gh workflow run deploy-runtime.yml \\"
+              echo "  -f gateway_image_digest=sha256:... \\"
+              echo "  -f scorer_image_digest=sha256:... \\"
+              echo "  -f confirm_cost_aware='${EXPECTED}'"
+              echo "\`\`\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            failed=1
+          else
+            echo "cost gate: confirmation phrase matches exactly"
+          fi
+
+          # Digest shape, checked here rather than left for the AWS call to reject. `sha256:` + exactly 64
+          # lowercase hex. A tag passed where a digest belongs is the single most likely input mistake, and
+          # `aws ecr describe-images --image-ids imageDigest=v1.2.3` fails with a message about image
+          # identifiers that does not say "you passed a tag".
+          for pair in "gateway:${GATEWAY_DIGEST}" "scorer:${SCORER_DIGEST}"; do
+            name="${pair%%:*}"
+            value="${pair#*:}"
+            if ! printf '%s' "$value" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+              echo "::error title=${name}_image_digest is not a digest::Got '${value}'. Expected sha256: followed by 64 lowercase hex characters. Promotion is by digest, never by tag (rules.md R-56): a tag can be moved, so a manifest naming a tag stops describing what is running."
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+          # Normalised (whitespace-trimmed) values are what the rest of the workflow uses, so no later job
+          # re-parses raw input.
+          {
+            printf 'gateway_digest=%s\n' "$(printf '%s' "${GATEWAY_DIGEST}" | tr -d '[:space:]')"
+            printf 'scorer_digest=%s\n' "$(printf '%s' "${SCORER_DIGEST}" | tr -d '[:space:]')"
+          } >> "$GITHUB_OUTPUT"
+          echo "cost gate: PASSED — both digests are well-formed"
+
+  # =================================================================================================
+  # JOB 2 — prove the digests were produced by a prior build. Still nothing scaled.
+  # =================================================================================================
+  verify-digests:
+    name: verify both digests exist in ECR
+    needs: cost-gate
+    runs-on: ubuntu-24.04
+    env:
+      # Pinned literal in every AWS-touching job. `${{ vars.AWS_REGION }}` is the empty string if the
+      # variable was never set, and an empty region does not fail — it silently resolves to the runner's
+      # ambient default, which is not ap-south-1.
+      AWS_REGION: ap-south-1
+    permissions:
+      contents: read
+      id-token: write # rules.md R-55: OIDC. There is no AWS_ACCESS_KEY_ID secret in this repository.
+    # Referencing an environment does two useful things and costs nothing if it is not configured:
+    # GitHub creates it on first use, and IF someone later adds a required reviewer to it, this workflow
+    # gains a second-human approval gate on GPU spend for free. The OIDC `sub` claim becomes
+    # `repo:<org>/sih26104-voice-integrity:environment:gpu-runtime`, which the current trust policy's
+    # `repo:<org>/sih26104-voice-integrity:*` StringLike still matches (aws-setup-instructions.md 3.2).
+    # stop-runtime.yml deliberately does NOT use an environment — a stop must never wait for an approver.
+    environment: gpu-runtime
+    outputs:
+      gateway_image: ${{ steps.verify.outputs.gateway_image }}
+      scorer_image: ${{ steps.verify.outputs.scorer_image }}
+      gateway_digest: ${{ needs.cost-gate.outputs.gateway_digest }}
+      scorer_digest: ${{ needs.cost-gate.outputs.scorer_digest }}
+    steps:
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: deploy-runtime-verify-${{ github.run_id }}
+          role-duration-seconds: 900
+
+      - name: Confirm both digests exist and record what they are
+        id: verify
+        env:
+          GATEWAY_DIGEST: ${{ needs.cost-gate.outputs.gateway_digest }}
+          SCORER_DIGEST: ${{ needs.cost-gate.outputs.scorer_digest }}
+        run: |
+          set -uo pipefail
+          registry="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com"
+          failed=0
+
+          # This is the step that makes "promotion, never rebuild" enforceable rather than aspirational.
+          # An image that is not already in ECR cannot be promoted, because there is nothing to promote —
+          # and the correct response is to merge the change and let <service>-ci build it, not to build it
+          # here. A deploy workflow that could build would be a deploy workflow that could ship bytes no
+          # CI run ever tested.
+          describe() {
+            local repo="$1" digest="$2"
+            aws ecr describe-images \
+              --region "$AWS_REGION" \
+              --repository-name "$repo" \
+              --image-ids "imageDigest=${digest}" \
+              --query 'imageDetails[0].{tags:imageTags,pushed:imagePushedAt,size:imageSizeInBytes}' \
+              --output json 2>&1
+          }
+
+          for pair in "gateway:sih26104/gateway:${GATEWAY_DIGEST}" "scorer:sih26104/scorer-gpu:${SCORER_DIGEST}"; do
+            name="${pair%%:*}"
+            rest="${pair#*:}"
+            repo="${rest%%:*}"
+            digest="${rest#*:}"
+            echo "--- ${name}: ${repo}@${digest}"
+            if ! out="$(describe "$repo" "$digest")"; then
+              echo "::error title=${name} digest not found in ECR::${repo}@${digest} does not exist. It was never built, or it was expired by the keep-last-15 lifecycle policy. Merge the change and let ${name}-ci build it — this workflow does not build (rules.md R-56). AWS said: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-300)"
+              failed=1
+              continue
+            fi
+            printf '%s\n' "$out"
+            echo "${name}_image=${registry}/${repo}@${digest}" >> "$GITHUB_OUTPUT"
+          done
+
+          [ "$failed" -eq 0 ] || exit 1
+          echo "both digests exist in ECR and are promotable"
+
+      # A GPU tier running the CPU scorer image would come up, pass a health check, and report
+      # CPUExecutionProvider — which is exactly the silent failure rules.md R-45 calls a failure rather
+      # than a degradation. The two tiers live in different repositories precisely so this is checkable
+      # (aws-setup-instructions.md section 5), and the previous step already resolved the digest against
+      # sih26104/scorer-gpu only, so a scorer-cpu digest fails there with "not found". This step states
+      # that reasoning where someone reading the log will see it.
+      - name: Note on tier confusion
+        run: |
+          echo "The scorer digest was resolved against sih26104/scorer-gpu only."
+          echo "A sih26104/scorer-cpu digest therefore fails as 'not found' rather than deploying a CPU"
+          echo "image onto the GPU tier — which would come up healthy and report CPUExecutionProvider"
+          echo "(rules.md R-45: a silent CPU fallback is a failure, not a degradation)."
+
+  # =================================================================================================
+  # JOB 3 — SPEND STARTS HERE. Capacity first, because a GPU task cannot be placed without an instance.
+  # =================================================================================================
+  start-capacity:
+    name: "SPEND STARTS: scale the GPU ASG to 1"
+    needs: verify-digests
+    runs-on: ubuntu-24.04
+    env:
+      AWS_REGION: ap-south-1
+      ASG_NAME: scorer-gpu-asg
+      CLUSTER: sih26104
+    permissions:
+      contents: read
+      id-token: write
+    environment: gpu-runtime
+    steps:
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: deploy-runtime-capacity-${{ github.run_id }}
+          role-duration-seconds: 1800
+
+      - name: Scale the ASG to exactly one instance
+        run: |
+          set -euo pipefail
+          # min=max=desired=1. `max=1` is not decoration: rules.md R-32 allows exactly one g4dn.xlarge for
+          # the entire five-day window, and max is the only value that makes that a limit rather than an
+          # intention. It is also the mirror image of stop-runtime, where zeroing max is what stops the ASG
+          # relaunching the instance (R-31).
+          aws autoscaling update-auto-scaling-group \
+            --region "$AWS_REGION" \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --min-size 1 --max-size 1 --desired-capacity 1
+          echo "::warning title=GPU SPEND HAS STARTED::A g4dn.xlarge is launching. Run stop-runtime.yml when the session ends — every session, no exceptions (rules.md R-30). The Budget/SNS/Lambda path is a delayed backstop measured in HOURS, not a circuit breaker."
+
+      - name: Wait for the instance to register with the ECS cluster
+        run: |
+          set -uo pipefail
+          # An ECS service with a GPU resource requirement cannot place a task until a GPU container
+          # instance has registered. Updating the service first would leave it in a PENDING state with a
+          # "no container instance met all of its requirements" event, which reads like a task-definition
+          # problem rather than a timing one.
+          deadline=$(( $(date +%s) + 600 ))
+          while :; do
+            count="$(aws ecs describe-clusters --region "$AWS_REGION" --clusters "$CLUSTER" \
+              --query 'clusters[0].registeredContainerInstancesCount' --output text 2>/dev/null || echo "0")"
+            [ "$count" = "None" ] && count=0
+            if [ "${count:-0}" -ge 1 ]; then
+              echo "container instances registered: ${count}"
+              exit 0
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error title=No GPU container instance registered within 10 minutes::The ASG was scaled to 1 but no instance joined cluster ${CLUSTER}. Usual causes: GPU quota not granted (aws-setup-instructions.md section 2), the AMI is not the ECS GPU-optimized AMI, ECS_ENABLE_GPU_SUPPORT is missing from the instance user data, or g4dn.xlarge has no capacity in the chosen AZ. THE ASG IS STILL AT 1 AND MAY BE BILLING — run stop-runtime.yml."
+              exit 1
+            fi
+            echo "  waiting for a GPU container instance ($(( deadline - $(date +%s) ))s left)"
+            sleep 15
+          done
+
+  # =================================================================================================
+  # JOB 4 — pin both services to the verified digests and scale them to 1.
+  # =================================================================================================
+  deploy-services:
+    name: deploy both services at the verified digests
+    needs: [verify-digests, start-capacity]
+    runs-on: ubuntu-24.04
+    env:
+      AWS_REGION: ap-south-1
+      CLUSTER: sih26104
+    permissions:
+      contents: read
+      id-token: write
+    environment: gpu-runtime
+    steps:
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: deploy-runtime-services-${{ github.run_id }}
+          role-duration-seconds: 1800
+
+      # -----------------------------------------------------------------------------------------------
+      # `--force-new-deployment` alone is NOT promotion by digest.
+      #
+      # aws-setup-instructions.md section 11 shows `update-service --desired-count 1
+      # --force-new-deployment`, which re-pulls whatever the existing task definition points at. If that
+      # is a tag, the digest inputs to this workflow would be decorative — the run would report a digest
+      # and ship something else. So the task definition is read, its container image is replaced with the
+      # digest-pinned reference, a new revision is registered, and the service is pointed at that
+      # revision. That is what makes the digest the deployment unit (rules.md R-51, R-56).
+      #
+      # Named as a difference from the runbook per rules.md R-54: the runbook's two commands are the
+      # minimum to make something run; these are the minimum to make it provably the right something.
+      # -----------------------------------------------------------------------------------------------
+      - name: Register digest-pinned task definitions and update both services
+        env:
+          GATEWAY_IMAGE: ${{ needs.verify-digests.outputs.gateway_image }}
+          SCORER_IMAGE: ${{ needs.verify-digests.outputs.scorer_image }}
+        run: |
+          set -euo pipefail
+
+          pin_and_update() {
+            local service="$1" image="$2"
+            echo "=== ${service} -> ${image}"
+
+            local current_td
+            current_td="$(aws ecs describe-services --region "$AWS_REGION" \
+              --cluster "$CLUSTER" --services "$service" \
+              --query 'services[0].taskDefinition' --output text)"
+            if [ -z "$current_td" ] || [ "$current_td" = "None" ]; then
+              echo "::error title=${service} not found::No service named '${service}' in cluster ${CLUSTER}. ComputeStack has not been deployed, or the name changed."
+              return 1
+            fi
+            echo "current task definition: ${current_td}"
+
+            aws ecs describe-task-definition --region "$AWS_REGION" \
+              --task-definition "$current_td" --query 'taskDefinition' --output json > /tmp/td.json
+
+            # The image is swapped in Python rather than with jq: jq is present on GitHub runners today,
+            # but this is the step whose silent failure ships an unintended image, and it should not
+            # depend on a tool nobody pinned. Python is guaranteed on ubuntu-24.04.
+            python3 - "$service" "$image" <<'PY'
+          import json
+          import sys
+
+          service, image = sys.argv[1], sys.argv[2]
+          with open("/tmp/td.json", encoding="utf-8") as fh:
+              td = json.load(fh)
+
+          # register-task-definition rejects the read-only fields describe-task-definition returns.
+          for field in (
+              "taskDefinitionArn", "revision", "status", "requiresAttributes",
+              "compatibilities", "registeredAt", "registeredBy", "deregisteredAt",
+          ):
+              td.pop(field, None)
+
+          containers = td.get("containerDefinitions") or []
+          names = [c.get("name") for c in containers]
+          # Match the container whose name equals the service name; fall back to a single-container task
+          # definition. Anything else is ambiguous and must fail rather than guess — replacing the wrong
+          # container's image is a failure that comes up healthy.
+          targets = [c for c in containers if c.get("name") == service]
+          if not targets and len(containers) == 1:
+              targets = containers
+          if not targets:
+              print(
+                  f"::error title=No container to pin in {service}::The task definition's containers are "
+                  f"{names}. None is named '{service}' and there is more than one, so this script will not "
+                  f"guess which image to replace. Rename the container to match the service, or teach this "
+                  f"step the mapping explicitly."
+              )
+              raise SystemExit(1)
+
+          for container in targets:
+              print(f"  {container['name']}: {container.get('image')} -> {image}")
+              container["image"] = image
+
+          with open("/tmp/td-new.json", "w", encoding="utf-8") as fh:
+              json.dump(td, fh)
+          PY
+
+            local new_td
+            new_td="$(aws ecs register-task-definition --region "$AWS_REGION" \
+              --cli-input-json file:///tmp/td-new.json \
+              --query 'taskDefinition.taskDefinitionArn' --output text)"
+            echo "registered: ${new_td}"
+
+            aws ecs update-service --region "$AWS_REGION" \
+              --cluster "$CLUSTER" --service "$service" \
+              --task-definition "$new_td" \
+              --desired-count 1 \
+              --force-new-deployment >/dev/null
+            echo "${service}: desired-count 1 at ${new_td}"
+          }
+
+          # Gateway first. It waits SCORER_WAIT_SECONDS=120 for the Scorer at startup (gateway/app/main.py),
+          # so starting it first costs nothing and means both are in flight together rather than serially.
+          pin_and_update gateway "$GATEWAY_IMAGE"
+          pin_and_update scorer  "$SCORER_IMAGE"
+
+      - name: Wait for both services to reach a steady state
+        run: |
+          set -uo pipefail
+          # `services-stable` waits for desiredCount == runningCount with no in-flight deployment. It is
+          # the right primitive here and it is NOT sufficient on its own: a task that is RUNNING is not a
+          # task that loaded the real model on the real provider. The verify job below is where that is
+          # (partially — read its output) established.
+          if ! aws ecs wait services-stable --region "$AWS_REGION" \
+               --cluster "$CLUSTER" --services gateway scorer; then
+            echo "::error title=Services did not stabilise::One or both services failed to reach a steady state. The Scorer runs its artifact checks BEFORE binding its port (scorer/app/server.py), so a task that keeps restarting usually means a failed artifact check — a missing model mount, or a model/calibration SHA pair that does not match the release manifest — not a networking problem. CAPACITY IS STILL RUNNING."
+            aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services gateway scorer \
+              --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,pending:pendingCount,events:events[0:3].message}' \
+              --output json || true
+            exit 1
+          fi
+          aws ecs describe-services --region "$AWS_REGION" --cluster "$CLUSTER" --services gateway scorer \
+            --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,taskDefinition:taskDefinition}' \
+            --output table
+
+  # =================================================================================================
+  # JOB 5 — verify what is actually running, and be explicit about what cannot be verified from here.
+  # =================================================================================================
+  verify-runtime:
+    name: verify the running deployment
+    needs: [verify-digests, deploy-services]
+    runs-on: ubuntu-24.04
+    env:
+      AWS_REGION: ap-south-1
+      CLUSTER: sih26104
+    permissions:
+      contents: read
+      id-token: write
+    environment: gpu-runtime
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: deploy-runtime-verify-runtime-${{ github.run_id }}
+          role-duration-seconds: 1800
+
+      # -----------------------------------------------------------------------------------------------
+      # V-1: the running tasks are running the digests this run promoted.
+      #
+      # This closes the loop. Everything up to here proved the digests exist and were registered; this
+      # reads back what the cluster actually pulled. A task definition can be registered correctly and
+      # the service can still be running an older revision if a deployment was rolled back.
+      # -----------------------------------------------------------------------------------------------
+      - name: V-1 — running tasks match the promoted digests
+        env:
+          GATEWAY_DIGEST: ${{ needs.verify-digests.outputs.gateway_digest }}
+          SCORER_DIGEST: ${{ needs.verify-digests.outputs.scorer_digest }}
+        run: |
+          set -uo pipefail
+          failed=0
+          for pair in "gateway:${GATEWAY_DIGEST}" "scorer:${SCORER_DIGEST}"; do
+            service="${pair%%:*}"
+            want="${pair#*:}"
+            arns="$(aws ecs list-tasks --region "$AWS_REGION" --cluster "$CLUSTER" \
+              --service-name "$service" --desired-status RUNNING \
+              --query 'taskArns' --output text 2>/dev/null || true)"
+            if [ -z "$arns" ] || [ "$arns" = "None" ]; then
+              echo "::error title=${service} has no RUNNING task::Nothing is running for ${service}, so nothing can be verified."
+              failed=1
+              continue
+            fi
+            # `imageDigest` on a container is what the agent actually pulled. Comparing that to the input
+            # is the only check that catches "registered the right revision, running the old one".
+            got="$(aws ecs describe-tasks --region "$AWS_REGION" --cluster "$CLUSTER" --tasks $arns \
+              --query 'tasks[].containers[].imageDigest' --output text 2>/dev/null || true)"
+            echo "${service}: running digest(s) = ${got:-<none reported>}"
+            case " $got " in
+              *" $want "*) echo "  ok  ${service} is running the promoted digest" ;;
+              *)
+                if [ -z "$got" ] || [ "$got" = "None" ]; then
+                  echo "::warning title=${service} reported no image digest::The ECS agent did not report an imageDigest for this task. Cannot confirm the running bytes; confirm against GET /api/v1/version and the release manifest before quoting any number from this deployment (rules.md R-01)."
+                else
+                  echo "::error title=${service} is running a different image::Promoted ${want} but the running task reports ${got}. A release manifest naming the promoted digest would be describing something that is not running (rules.md R-51, R-56)."
+                  failed=1
+                fi
+                ;;
+            esac
+          done
+          exit "$failed"
+
+      # -----------------------------------------------------------------------------------------------
+      # V-2: the GPU provider assertion. THIS IS NOW AUTOMATED — the permission it asked for was granted.
+      #
+      # HISTORY, kept because the reasoning is still the reason this step is shaped the way it is. This
+      # step was written to EXPECT failure: aws-setup-instructions.md section 11.1 checks the provider
+      # with `aws logs tail /ecs/sih26104/scorer`, and section 3.3's enumerated permission list for
+      # gh-actions-deploy-role (ECR, ECS update/describe, Auto Scaling update/describe, CloudFormation+S3
+      # for CDK, iam:PassRole, secretsmanager:GetSecretValue) contained no CloudWatch Logs grant. So it
+      # tried the read, degraded to a warning naming the exact missing action, and refused to claim the
+      # provider had been verified.
+      #
+      # The policy in infra/iam/gh-actions-deploy-policy.json — the authoritative artifact, which §3.3
+      # only describes — now grants `logs:FilterLogEvents` on
+      # `arn:aws:logs:ap-south-1:<account>:log-group:/ecs/sih26104/*:*` (statement 6d), for the reason
+      # the warning below argued: a permanently unverified R-45 is a bad equilibrium, because a silent
+      # CPU fallback leaves the task HEALTHY while invalidating every latency number measured against it.
+      # One narrow read converts that from an operator's to-do into an assertion CI makes every deploy.
+      #
+      # WHAT IS STILL NOT AUTOMATED, and why the AccessDenied branch below is retained rather than
+      # deleted: the in-VPC gRPC Health probe. The Scorer has no public IP and no public route (R-36), so
+      # `wait_for_scorer_healthy.sh` cannot run from a hosted runner — it is the right tool from inside
+      # the VPC or against a local Compose stack, which is where CI uses it. And the branch itself stays
+      # because a policy is editable: if someone narrows statement 6d, this step must degrade honestly
+      # again rather than fail in a way that looks like a broken deploy. Fail-open on *permission*,
+      # fail-closed on *evidence* — CPUExecutionProvider found is still `exit 1`.
+      # -----------------------------------------------------------------------------------------------
+      - name: V-2 — attempt the execution-provider check (R-45)
+        id: provider
+        env:
+          EXPECT_PROVIDER: ${{ inputs.expect_provider }}
+        run: |
+          # `set +e` explicitly. GitHub runs `run:` blocks under `bash -e`, so without this the step would
+          # abort the moment the log read fails. Denial is no longer the expected case — statement 6d of
+          # infra/iam/gh-actions-deploy-policy.json grants logs:FilterLogEvents on /ecs/sih26104/* — but
+          # the read can still fail for reasons that are NOT evidence about the provider: the log group
+          # may not exist yet, the task may not have logged its banner, or the policy may have been
+          # narrowed since. Aborting on those would turn "CI could not check" into a hard deploy failure.
+          # Absence of evidence is a warning; evidence of CPU is `exit 1` further down.
+          set +e
+          set -uo pipefail
+          out="$(aws logs filter-log-events --region "$AWS_REGION" \
+                  --log-group-name "/ecs/sih26104/scorer" \
+                  --start-time "$(( ($(date +%s) - 900) * 1000 ))" \
+                  --query 'events[].message' --output text 2>&1)"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            case "$out" in
+              *AccessDenied*|*not\ authorized*)
+                echo "verified=no" >> "$GITHUB_OUTPUT"
+                echo "::warning title=Execution provider NOT verified (permission)::The log read was denied, which means the DEPLOYED role does not match infra/iam/gh-actions-deploy-policy.json — statement 6d grants logs:FilterLogEvents on arn:aws:logs:ap-south-1:<account>:log-group:/ecs/sih26104/*:*, so either the policy was never re-applied after that statement was added, or it has since been narrowed. Re-render and re-apply (python scripts/render_iam_policies.py, then aws iam put-role-policy). Until then this is a real gap, not a formality: a silent CPU fallback invalidates every latency number recorded today (rules.md R-45), so run the section 11.1 check by hand NOW."
+                ;;
+              *ResourceNotFound*)
+                echo "verified=no" >> "$GITHUB_OUTPUT"
+                echo "::warning title=Execution provider NOT verified (no log group)::/ecs/sih26104/scorer does not exist yet. The task may not have logged anything, or the log configuration in the task definition points elsewhere."
+                ;;
+              *)
+                echo "verified=no" >> "$GITHUB_OUTPUT"
+                echo "::warning title=Execution provider NOT verified::$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-300)"
+                ;;
+            esac
+            exit 0
+          fi
+
+          printf '%s\n' "$out" | tr '\t' '\n' | grep -Ei 'provider|model_sha|calibration_sha|detector_mode|artifact_state' | tail -20 || true
+
+          if printf '%s' "$out" | grep -q "$EXPECT_PROVIDER"; then
+            echo "verified=yes" >> "$GITHUB_OUTPUT"
+            echo "  ok  the Scorer banner reports ${EXPECT_PROVIDER}"
+          elif printf '%s' "$out" | grep -q "CPUExecutionProvider"; then
+            echo "verified=failed" >> "$GITHUB_OUTPUT"
+            echo "::error title=SILENT CPU FALLBACK ON THE GPU TIER::The Scorer reports CPUExecutionProvider but ${EXPECT_PROVIDER} was asserted. rules.md R-45: this is a FAILURE, not a degradation — the task is healthy and every latency number measured against it is a CPU number wearing a GPU label. Stop, fix the image, and discard any measurement taken from this deployment."
+            exit 1
+          else
+            echo "verified=no" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Execution provider not found in the log window::Neither ${EXPECT_PROVIDER} nor CPUExecutionProvider appeared in the last 15 minutes of /ecs/sih26104/scorer. The banner may not have been emitted yet. Check by hand before trusting any measurement."
+          fi
+
+      # -----------------------------------------------------------------------------------------------
+      # V-3: the real end-to-end check, and the only one that needs no AWS permission at all.
+      #
+      # CloudFront is public, so scripts/contract_test.sh can run against the deployed system exactly as
+      # it runs against local Compose. This is the check that actually proves the deployment serves the
+      # contract: T-03/T-04 that the parity-set fields are populated and not the string "unavailable",
+      # T-05 that the served contract hashes match this checkout, T-06 that mock mode is not being
+      # presented as a detector, T-07 that the served schema has no approve/deny.
+      #
+      # --no-local-contracts is NOT passed: a deployed digest built from a different `contracts/` than
+      # this checkout is exactly what T-05 exists to catch. The script defaults to advisory for a remote
+      # target, which is right for an operator poking at an older deployment, and wrong here — this run
+      # promoted these digests, so the tree and the deployment must agree.
+      # -----------------------------------------------------------------------------------------------
+      - name: V-3 — contract suite against the public edge
+        env:
+          CF_DOMAIN: ${{ vars.CF_DOMAIN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CF_DOMAIN}" ]; then
+            echo "::warning title=Contract suite skipped::The repository variable CF_DOMAIN is not set, so there is no public base URL to test. Set it after EdgeStack deploys: gh variable set CF_DOMAIN --body dXXXXXXXX.cloudfront.net . Without this, NOTHING in this run has exercised the deployed HTTP surface — only the control plane was checked."
+            exit 0
+          fi
+          ./scripts/contract_test.sh "https://${CF_DOMAIN}" --local-contracts
+
+  # =================================================================================================
+  # JOB 6 — automatic stop if the deploy failed after capacity was raised.
+  # =================================================================================================
+  stop-on-failure:
+    name: automatic stop (deploy failed after capacity was raised)
+    # `always()` so this evaluates even when a dependency failed, then narrowed to the case that matters.
+    # `start-capacity` must have run — if the cost gate rejected the run or a digest was missing, nothing
+    # was ever scaled and there is nothing to stop.
+    if: ${{ always() && inputs.stop_on_failure && needs.start-capacity.result == 'success' && (needs.deploy-services.result == 'failure' || needs.verify-runtime.result == 'failure' || needs.deploy-services.result == 'cancelled' || needs.verify-runtime.result == 'cancelled') }}
+    needs: [start-capacity, deploy-services, verify-runtime]
+    runs-on: ubuntu-24.04
+    env:
+      AWS_REGION: ap-south-1
+      CLUSTER: sih26104
+      ASG_NAME: scorer-gpu-asg
+    permissions:
+      contents: read
+      id-token: write
+    # NO environment here. If `gpu-runtime` ever gains a required reviewer, an automatic stop must not
+    # sit waiting for an approver while a g4dn bills. Approval gates belong on starting spend, never on
+    # ending it.
+    steps:
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: deploy-runtime-autostop-${{ github.run_id }}
+          role-duration-seconds: 900
+
+      - name: Zero everything
+        run: |
+          set -uo pipefail
+          echo "::warning title=Automatic stop::The deploy failed after capacity was raised, so this run is zeroing the runtime rather than leaving a g4dn.xlarge billing while nobody is watching. Set stop_on_failure=false to keep a failed deploy alive for debugging."
+          aws ecs update-service --region "$AWS_REGION" --cluster "$CLUSTER" --service gateway --desired-count 0 >/dev/null || true
+          aws ecs update-service --region "$AWS_REGION" --cluster "$CLUSTER" --service scorer  --desired-count 0 >/dev/null || true
+          # min AND max AND desired. Zeroing desired alone with min=1 makes the ASG relaunch immediately
+          # (rules.md R-31).
+          aws autoscaling update-auto-scaling-group --region "$AWS_REGION" \
+            --auto-scaling-group-name "$ASG_NAME" \
+            --min-size 0 --max-size 0 --desired-capacity 0 || true
+          echo "Zeroing issued. This job does NOT verify the effect — stop-runtime.yml does, and it is"
+          echo "idempotent, so run it now to confirm zero instances and zero running tasks."
+
+  # =================================================================================================
+  # JOB 7 — the summary. Runs whatever happened, because the state after a partial failure is exactly
+  # when someone needs to be told what is running and how to stop it.
+  # =================================================================================================
+  summary:
+    name: summary
+    if: always()
+    needs: [cost-gate, verify-digests, start-capacity, deploy-services, verify-runtime, stop-on-failure]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Write the summary
+        env:
+          SPEND_STARTED: ${{ needs.start-capacity.result }}
+          AUTOSTOP: ${{ needs.stop-on-failure.result }}
+          VERIFY: ${{ needs.verify-runtime.result }}
+        run: |
+          {
+            echo "### deploy-runtime"
+            echo
+            echo "| stage | result |"
+            echo "|---|---|"
+            echo "| cost gate | ${{ needs.cost-gate.result }} |"
+            echo "| digests verified in ECR | ${{ needs.verify-digests.result }} |"
+            echo "| GPU capacity raised | ${{ needs.start-capacity.result }} |"
+            echo "| services deployed | ${{ needs.deploy-services.result }} |"
+            echo "| runtime verified | ${{ needs.verify-runtime.result }} |"
+            echo "| automatic stop | ${{ needs.stop-on-failure.result }} |"
+            echo
+            echo "**Promoted digests** (these, not tags, are what a release manifest must record — R-51, R-56):"
+            echo
+            echo "| service | digest |"
+            echo "|---|---|"
+            echo "| gateway | \`${{ needs.cost-gate.outputs.gateway_digest }}\` |"
+            echo "| scorer (gpu) | \`${{ needs.cost-gate.outputs.scorer_digest }}\` |"
+            echo
+
+            if [ "$SPEND_STARTED" = "success" ] && [ "$AUTOSTOP" != "success" ]; then
+              echo "---"
+              echo
+              echo "## A g4dn.xlarge IS RUNNING AND BILLING"
+              echo
+              echo "Run this when the session ends — **every session, no exceptions** (rules.md R-30):"
+              echo
+              echo '```bash'
+              echo "gh workflow run stop-runtime.yml"
+              echo '```'
+              echo
+              echo "The AWS Budget → SNS → Lambda path is a **delayed** backstop measured in hours, because"
+              echo "budgets evaluate against Cost Explorer data that refreshes a few times a day. It is not a"
+              echo "circuit breaker. A GPU left running overnight has already billed for the night."
+              echo
+            fi
+
+            echo "---"
+            echo
+            echo "### What this run did NOT verify (rules.md R-01, R-52)"
+            echo
+            echo "- **The execution provider, if and only if V-2 above did not confirm it.** V-2 now reads"
+            echo "  \`/ecs/sih26104/scorer\` directly and asserts the provider, so in the normal case this is"
+            echo "  verified rather than outstanding — check its outcome above. It can still come back"
+            echo "  unconfirmed if the banner had not been logged inside the 15-minute window. When that"
+            echo "  happens, treat every latency number from this deployment as unlabelled until you run:"
+            echo
+            echo '```bash'
+            echo "aws logs tail /ecs/sih26104/scorer --since 5m --region ap-south-1 \\"
+            echo "  | grep -E 'provider|model_sha|calibration_sha|detector_mode'"
+            echo "# MUST show CUDAExecutionProvider. CPUExecutionProvider means the deploy FAILED even"
+            echo "# though the task is healthy (rules.md R-45)."
+            echo '```'
+            echo
+            echo "- **Database migrations — by choice, not by permission.** The deploy role *can* run the"
+            echo "  one-shot Alembic task (\`ecs:RunTask\` is granted, scoped to the \`gateway-migrate\`"
+            echo "  family on the \`sih26104\` cluster). This workflow deliberately does not invoke it:"
+            echo "  a schema migration is not idempotent in the way an image rollout is, and running one"
+            echo "  automatically on every deploy would make the destructive case the default. Run it"
+            echo "  yourself (aws-setup-instructions.md section 8) before trusting any write path."
+            echo "- **A real streaming session.** The contract suite exercises the HTTP surface. The"
+            echo "  WebSocket frame contract, the ring buffer, and the policy state machine need an actual"
+            echo "  audio stream from the PWA."
+            echo "- **The ONNX CPU/GPU fixed-vector parity gate** (frame_contract.md section 6). That is a"
+            echo "  Pair B hand-off and a written confirmation (phases.md section 4.1), not a CI step."
+          } >> "$GITHUB_STEP_SUMMARY"

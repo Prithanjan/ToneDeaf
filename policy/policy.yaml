@@ -1,0 +1,206 @@
+# ==================================================================================================
+# policy.yaml — the decision half of the Voice Integrity Control Plane
+# ==================================================================================================
+#
+# Loaded by gateway/app/policy/loader.py::load_policy at startup. There is deliberately NO default
+# threshold in code: a missing or malformed bundle stops the Gateway rather than falling back, because
+# inventing a number silently is how a demo ends up enforcing a threshold nobody chose (rules.md R-10).
+#
+# --------------------------------------------------------------------------------------------------
+# THIS FILE'S BYTES ARE THE CANONICAL FORM
+# --------------------------------------------------------------------------------------------------
+# The loader hashes the file with sha256 over its raw bytes (loader.py::_sha256_file) and stamps that
+# digest into EVERY audit row as `policy_bundle_sha256`, and into GET /api/v1/version. Consequences,
+# all of them intended:
+#
+#   * Re-indenting, re-ordering keys, normalising quotes, or editing a comment changes the hash, and
+#     therefore shows up in the evidence as a policy change. That is correct. This file is a reviewed
+#     artifact; if its bytes changed, something reviewable changed. Do not run a YAML formatter over
+#     it, and do not "tidy" it in a commit that is about something else.
+#   * `policy_version` must be bumped in the SAME commit as any byte change. A hash that moved while
+#     the version stood still means two tiers can report the same policy_version for different rules,
+#     which makes the audit trail unable to answer "which policy decided this?" (rules.md R-24).
+#   * This file does not and cannot contain its own hash. Anything claiming to be the bundle digest
+#     inside the bundle is stale by construction. The digest comes from the loader and is reported by
+#     the version endpoint; that is the only place to read it.
+# ==================================================================================================
+
+policy_version: "0.1.0"
+
+# Must equal calibration.json::model_version. loader.py refuses the pair otherwise, because a bundle
+# tuned for one model deployed against another applies every threshold to a different score
+# distribution — and nothing in the output would look wrong.
+model_version: "0.1.0"
+
+# ==================================================================================================
+# thresholds
+# ==================================================================================================
+thresholds:
+  # ------------------------------------------------------------------------------------------------
+  # 0.78 IS A PLACEHOLDER. IT IS NOT A MEASURED VALUE AND MUST NEVER BE PRESENTED AS ONE.
+  # ------------------------------------------------------------------------------------------------
+  # It was chosen so the demo state machine has something to compare against. It is not an operating
+  # point. It was NOT derived from a ROC curve, NOT from an EER, NOT from a cost matrix, and NOT from
+  # any evaluation on this project's data. No document, slide, README, UI string, or verbal claim may
+  # describe it as tuned, calibrated, validated, or "our threshold" (rules.md R-01, R-02, R-03, R-04;
+  # decision D-11).
+  #
+  # What it would take to make this a real number, in order:
+  #   1. A fitted calibration on the `dev_calibration` split only — never on `eval_locked` (R-37).
+  #   2. A cost-sensitive decision matrix with the false-accept and false-reject costs written down
+  #      and owned by a named person. There is no universally valid 0.78; the right operating point
+  #      for a payment release is not the right one for a support enquiry.
+  #   3. Re-derivation of this value from that matrix, with the derivation committed alongside it.
+  #   4. `derivation` below changed from `placeholder` to the identifier of that derivation.
+  #
+  # Until step 4, loader.py::PolicyBundle.artifact_state can only ever return `demo_eligible`. That is
+  # a structural gate, not a promise: the string `placeholder` below is what holds it shut.
+  high_window_risk: 0.78
+
+  # Read by loader.py. The literal value `placeholder` is load-bearing — it is compared by string in
+  # PolicyBundle.artifact_state. Changing it to anything else asserts that a real derivation exists,
+  # so it may only be changed in the commit that adds one.
+  derivation: placeholder
+
+  # Free text for humans, ignored by the loader. Present so `derivation: placeholder` cannot be read
+  # as an oversight by someone skimming.
+  derivation_note: >-
+    Placeholder operating point for demo wiring only. Re-derive from a cost-sensitive matrix on
+    dev_calibration before any release claims policy_eligible. See the Calibration gate template in
+    evaluation/reports/.
+
+# ==================================================================================================
+# evidence — the k-of-n bar (rules.md R-08)
+# ==================================================================================================
+# THREE high windows out of the last FIVE ELIGIBLE windows. Two properties matter more than the
+# numbers:
+#
+#   * One high window never decides anything. A single 40 ms window over threshold is noise: a cough,
+#     a codec artifact, a moment of clipping. `k: 1` would make the demo more dramatic and the system
+#     indefensible, so PolicyThresholds.__post_init__ raises on k < 2 at load time — before any audio
+#     arrives. "Lower k for a more responsive demo" is a refusal, not a discussion.
+#   * The window is over ELIGIBLE windows only. An ineligible window (quality-flagged, too short,
+#     codec-degraded) is skipped, never counted as low risk (rules.md R-09). Absence of evidence is
+#     not evidence of absence, and counting a degraded window as clean is how an attacker with a bad
+#     line gets a lower risk state than one with a good line.
+#
+# n: 5 at ~40 ms hop is roughly 200 ms of eligible speech, so a decision is reached in well under a
+# second of voiced audio — fast enough for the live demo without dropping to k: 2.
+evidence:
+  k: 3
+  n: 5
+
+# ==================================================================================================
+# purpose_actions — the same evidence, different actions, on purpose
+# ==================================================================================================
+# This block is the proportionality argument (rules.md R-05, R-06). Identical evidence — the k-of-n
+# bar met — produces `verify` for a support enquiry and `escalate` for an account recovery, because
+# what is at stake differs. A single global action table would either over-react to a balance query
+# or under-react to an account takeover, and there would be no place in the system to say why.
+#
+# THE VOCABULARY IS CLOSED: continue | verify | hold | escalate.
+# `approve`, `deny`, `allow`, `block`, and `reject` do not exist in this system (rules.md R-07). They
+# are not omitted by convention — there is no enum member for them (engine.py::Action), the loader
+# raises PolicyLoadError on one (loader.py::_parse_action), and the audit table's CHECK constraint
+# rejects one (audit/migrations/schema_contract.py). This system produces proportionate verification
+# PRESSURE; a human authorises. Adding an authorization outcome is a stop condition for the project,
+# not a config change.
+#
+# Every purpose must map all three risk states. An unmapped state is a KeyError at decision time —
+# i.e. a crash during the demo at the exact moment risk was detected — so loader.py refuses the
+# bundle instead (loader.py::_parse_purpose_actions).
+#
+# Purpose codes are exactly the PurposeCode enum in contracts/openapi.yaml. Adding a purpose here
+# without adding it there produces a session that is accepted by the API and has no action mapping.
+purpose_actions:
+
+  # Money leaving the account. Reversible only with effort, and the caller is waiting.
+  # high -> hold: pause the release and require a second factor. Not `escalate`, because a queue for a
+  # human review team is the wrong instrument for a transaction that a step-up can resolve in seconds.
+  payment_release:
+    collecting: continue
+    uncertain: verify
+    high: hold
+
+  # Changing where future money goes. The single highest-value target in the threat model (prd.md §6)
+  # and effectively irreversible once a payment follows it.
+  # high -> escalate: a human sees this one. There is no step-up that makes a fraudulent beneficiary
+  # change safe, so `hold` would only delay it.
+  beneficiary_change:
+    collecting: continue
+    uncertain: verify
+    high: escalate
+
+  # Account takeover — the attack this system exists to detect. A successful recovery hands over
+  # everything, so it is escalated rather than held even though `hold` would be less disruptive.
+  # This is the pairing the brief names: same evidence as payment_release at `high`, different action.
+  account_recovery:
+    collecting: continue
+    uncertain: verify
+    high: escalate
+
+  # Nothing is at stake: balances, statement queries, opening hours.
+  # uncertain -> continue, deliberately. Interrupting a customer with identity checks because five
+  # windows were ambiguous during a balance query is a false-positive cost paid by the customer, and
+  # R-06 says the response must be proportionate to what is at risk. Which here is nothing.
+  # high -> verify is the floor: strong evidence is never ignored entirely, whatever the purpose.
+  support_enquiry:
+    collecting: continue
+    uncertain: continue
+    high: verify
+
+# ==================================================================================================
+# enforced_invariants — properties of the system, NOT switches
+# ==================================================================================================
+# Recorded here because a reviewer reading only this file would otherwise have to take them on trust.
+# The values are code locations rather than booleans ON PURPOSE: a `true` here would imply a `false`
+# exists, and someone would eventually set it. Nothing in this block is read by the loader; each entry
+# names the code that makes the property true, and audit/tests asserts those locations exist.
+enforced_invariants:
+
+  # Once a session reaches `high`, it stays there for the life of the session. Evidence does not
+  # evaporate because the next window looked clean — an attacker who is detected and then goes quiet
+  # must not be able to wait out the state. Clearing it requires an explicit human resolution step
+  # (Phase 4), which does not exist yet, so today `high` is terminal.
+  high_risk_state_is_sticky: "gateway/app/policy/engine.py::PolicyEngine.observe (rules.md R-13)"
+
+  # Ineligible windows never enter the k-of-n deque, so they can neither raise nor dilute the count.
+  ineligible_windows_are_skipped_not_counted_low: "gateway/app/policy/engine.py::PolicyEngine.observe (rules.md R-09)"
+
+  # No enum member, no mapping key, no CHECK constraint value for an authorization outcome.
+  action_vocabulary_is_closed: "gateway/app/policy/engine.py::Action (rules.md R-07)"
+
+  # k < 2 raises at load time, before any audio arrives.
+  one_high_window_never_decides: "gateway/app/policy/engine.py::PolicyThresholds.__post_init__ (rules.md R-08)"
+
+  # The engine holds no clock, no connection, and no audio, so a session is replayable from the
+  # audit table's spoof_risk column alone.
+  decision_layer_is_pure: "gateway/app/policy/engine.py::replay (rules.md R-53)"
+
+# ==================================================================================================
+# provenance
+# ==================================================================================================
+provenance:
+  # What this bundle is currently good for. Mirrors what loader.py DERIVES; it is not the source of
+  # truth, and a bundle cannot promote itself by editing this line. artifact_state is computed from
+  # `thresholds.derivation` and the calibration artifact's status, both of which must change first.
+  intended_artifact_state: demo_eligible
+
+  # Paired artifact. Its status gates probability language everywhere (rules.md R-11): while it reads
+  # `placeholder-not-policy-eligible`, `spoof_risk` may only be described as a score, never as a
+  # probability or a likelihood, in the UI, in logs, in reports, or out loud.
+  calibration_artifact: policy/calibration.json
+
+  # Splits. The threshold, when it is finally derived, is derived on dev_calibration. eval_locked is
+  # touched once, at the end, for the number that gets reported — fitting anything on it, including a
+  # threshold, destroys its only property (rules.md R-37).
+  threshold_derivation_split: dev_calibration
+  forbidden_derivation_split: eval_locked
+
+  # Who has to sign off on a real threshold. Named here so "we should re-derive it" has an owner
+  # rather than being everyone's problem.
+  derivation_owner: "TODO before Phase 3 — unassigned"
+
+  # Every action in this bundle is verification pressure applied to a human workflow. None of them is
+  # an authorization decision, and none of them is automated enforcement (rules.md R-05).
+  human_in_the_loop: "actions are advisory; a human authorises every transaction"

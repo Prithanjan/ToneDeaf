@@ -1,0 +1,89 @@
+# Scorer tooling configuration.
+#
+# Mirrors gateway/pyproject.toml: same line length, same rule selection, same marker semantics, so a
+# reviewer moving between the two services reads one convention. Declares no [project] table and no
+# build backend for the same reason the Gateway does not — dependencies live in requirements.txt with
+# exact pins, and two places listing dependencies is two places to drift. The parity set includes the
+# requirements file, not this one.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["."]
+# Generated protobuf modules are not ours to lint or format. They are committed artifacts of
+# scripts/gen_proto.sh; a lint fix applied to them would be silently reverted by the next generation.
+extend-exclude = ["app/voice_scorer_pb2.py", "app/voice_scorer_pb2_grpc.py"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",     # pycodestyle
+    "F",          # pyflakes
+    "I",          # isort
+    "B",          # bugbear
+    "C4",         # comprehensions
+    "UP",         # pyupgrade
+    "S",          # bandit; see per-file ignores
+    "RUF",
+]
+ignore = [
+    "E501",   # line length is checked by the formatter, not twice
+    "S104",   # binding 0.0.0.0 is correct in a container reachable only from the Gateway's SG
+]
+# ASYNC is not selected here, unlike in the Gateway: this service is a synchronous thread-pool gRPC
+# server by design (see app/server.py — InferenceSession.run releases the GIL, so threads give real
+# parallelism where an event loop would serialize inference behind one core). There is no async code
+# for the rule set to check.
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert on invariants, including negative cases that need literal example values and asserts.
+"tests/*" = ["S101", "S105", "S106"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+disallow_any_explicit = false
+disallow_any_generics = true
+warn_return_any = true
+no_implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# Generated protobuf stubs are not type-clean and are not ours to fix. Everything that crosses this
+# boundary is typed: server.py reads named fields off the request and constructs named responses.
+module = ["app.voice_scorer_pb2", "app.voice_scorer_pb2_grpc"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# onnxruntime ships no stubs. It is imported lazily inside OnnxDetector.load() precisely so that the
+# unit suite and mock mode do not need it installed at all.
+module = ["grpc.*", "onnxruntime.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# pytest-asyncio is installed (it is in the pinned stack and the Gateway needs it) but this service has
+# no async code, so the mode stays strict/default. The fixture loop scope is set explicitly only to
+# silence a plugin-import-time PytestDeprecationWarning, which `filterwarnings` cannot reach because it
+# is emitted before the filters are installed.
+asyncio_default_fixture_loop_scope = "function"
+# Fail on warnings. A NumPy RuntimeWarning is how an overflow in the calibration sigmoid or a dtype
+# demotion in the PCM conversion goes unnoticed between Day 1 and Day 5 — the two places in this
+# service where a silent numeric change invalidates a calibration without failing a shape test.
+filterwarnings = ["error"]
+markers = [
+    "contract: negative-contract tests; Phase 1 exit criteria (technical-design.md §9)",
+    "privacy: asserts a privacy control; failure is a RELEASE blocker (rules.md R-14..R-19)",
+    "parity: asserts a parity-set property; failure is a DEPLOY blocker",
+    "integration: needs onnxruntime and/or a running server; skipped by default in unit CI",
+]
+addopts = "-q --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/voice_scorer_pb2*.py"]
+
+[tool.coverage.report]
+# No global percentage gate, for the same reason as the Gateway: a number here would reward tests on
+# trivial modules while the modules that carry the invariants — contract, calibration, model — could
+# stay thin. technical-design.md §9 names the specific properties that must be covered instead.
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

@@ -1,0 +1,591 @@
+/* ==================================================================================================
+ * tokens.css — Voice Integrity Control Plane design tokens
+ * ==================================================================================================
+ *
+ * Normative source: `design.md`. Every value here has a rationale there; if you are about to change
+ * a number, change the rationale first or you are removing a control someone relied on.
+ *
+ * THE CONTRACT. Component code (`pwa/src/components/*`) consumes ONLY `--vi-*` semantic names from
+ * this file. It must never hard-code a hex value, a px spacing value, or a duration. Two agents
+ * build against this file in parallel; a literal in a component is an unreviewable divergence.
+ *
+ * STRUCTURE, and why it is layered rather than flat:
+ *   1. PALETTE PRIMITIVES  `--vi-p-d-*` (dark) / `--vi-p-l-*` (light) — raw hex, defined ONCE.
+ *   2. NON-THEMED SCALES   type, space, radius, motion, structure — identical in both themes.
+ *   3. SEMANTIC ALIASES    `--vi-bg`, `--vi-state-high-fg`, … — `var()` references only, no hex.
+ *
+ * The alias blocks are repeated per theme. They contain no hex, so a palette edit cannot silently
+ * apply to one theme and not the other — which is the failure mode of hand-maintained dual themes.
+ *
+ * DARK IS THE DEFAULT. The judged demo runs through an unknown conference-room projector
+ * (`phases.md` §6.2). Dark is the base `:root`; light is a `prefers-color-scheme` override and is
+ * fully supported, not a courtesy. `:root[data-vi-theme]` forces either one, because a projector or
+ * a borrowed laptop can report the wrong scheme and you must be able to fix that before judges are
+ * in the room — not during the 90 seconds.
+ *
+ * ACCESSIBILITY. Every text-on-surface pair below is measured in `design.md` §2.4/§2.5 and meets
+ * WCAG 2.2 AA (>=4.5:1 body, >=3:1 large text and non-text). `--vi-border` is the ONE exception: it
+ * is a decorative hairline at 1.24–1.68:1 across both themes and no component may use it as the sole
+ * boundary of a meaningful region. Meaningful boundaries use `--vi-border-strong` or a state
+ * `-border`.
+ *
+ * COLOUR IS NEVER THE ONLY CHANNEL. The three chromatic risk-state foregrounds sit within 1.05–1.32
+ * luminance ratio of each other, and the four action foregrounds within 1.03–1.40 (`design.md` §2.3
+ * measures every pair; `ineligible` is deliberately further out at 1.29–1.80 because it is the one
+ * achromatic member and must read as absence). Crush the chroma — cheap projector, achromatopsia,
+ * greyscale print — and they become the same colour. Glyph silhouette, label text, and position are
+ * therefore load-bearing, not decoration.
+ *
+ * NO WEB FONTS. System stacks only. The failover rehearsal (`phases.md` §6.1) assumes no network
+ * pull; a font CDN would make typography the one thing that breaks when the tunnel does.
+ * ================================================================================================== */
+
+/* ==================================================================================================
+ * 1. PALETTE PRIMITIVES — the only place a hex literal appears
+ * ================================================================================================== */
+
+:root {
+  /* --- dark surfaces ------------------------------------------------------------------------- */
+  --vi-p-d-bg: #0a0e14;
+  --vi-p-d-surface: #111823;
+  --vi-p-d-surface-raised: #18212e;
+  --vi-p-d-border: #2e3a4a;
+  --vi-p-d-border-strong: #62738a;
+
+  /* --- dark ink ------------------------------------------------------------------------------ */
+  --vi-p-d-text: #e9eef6;
+  --vi-p-d-text-muted: #aab8c9;
+  --vi-p-d-text-subtle: #8492a4;
+  --vi-p-d-text-inverse: #04121b;
+
+  /* --- dark interactive ---------------------------------------------------------------------- */
+  /* Steel-cyan, deliberately the same cool family as `collecting`/`continue`. A saturated green or
+   * blue "primary" would let the acknowledge button read as an endorsement of the outcome. */
+  --vi-p-d-accent: #4fa3cc;
+  --vi-p-d-focus: #7fd8ff;
+
+  /* --- dark risk states ---------------------------------------------------------------------- */
+  /* `collecting` — cool cyan. Evidence is accumulating; no finding exists yet. */
+  --vi-p-d-collecting-bg: #10222e;
+  --vi-p-d-collecting-fg: #79d2f2;
+  --vi-p-d-collecting-border: #3e90b8;
+  /* `uncertain` — amber. A REPORTABLE FINDING, not a loading state. */
+  --vi-p-d-uncertain-bg: #2a2010;
+  --vi-p-d-uncertain-fg: #f4c56a;
+  --vi-p-d-uncertain-border: #ad8433;
+  /* `high` — violet. Chosen because it carries no cultural stop/danger/blame coding. Red would
+   * assert a verdict this system is structurally incapable of reaching (`rules.md` R-07). */
+  --vi-p-d-high-bg: #221733;
+  --vi-p-d-high-fg: #c6a8ff;
+  --vi-p-d-high-border: #7f67cc;
+  /* `ineligible` — neutral. Absence of evidence must LOOK like absence (`rules.md` R-09). Paired
+   * with `--vi-hatch-ineligible` and a dashed-empty glyph; never a short bar. */
+  --vi-p-d-ineligible-bg: #161c25;
+  --vi-p-d-ineligible-fg: #8b99ab;
+  --vi-p-d-ineligible-border: #5e6e80;
+
+  /* --- dark actions -------------------------------------------------------------------------- */
+  /* `continue` — desaturated steel. The QUIETEST thing on screen by construction: it is the absence
+   * of accumulated evidence, not an all-clear. A green `continue` would be a claim. */
+  --vi-p-d-continue-bg: #12202b;
+  --vi-p-d-continue-fg: #9fb6cb;
+  --vi-p-d-continue-border: #5c7c93;
+  /* `verify` — amber, inherited from `uncertain`: the state and the action it usually produces share
+   * a hue so the causal link is visible without reading. */
+  --vi-p-d-verify-bg: #2a2010;
+  --vi-p-d-verify-fg: #f4c56a;
+  --vi-p-d-verify-border: #b48a34;
+  /* `hold` — violet, inherited from `high`. Pause, not stop. */
+  --vi-p-d-hold-bg: #221733;
+  --vi-p-d-hold-fg: #c9aeff;
+  --vi-p-d-hold-border: #8570d2;
+  /* `escalate` — magenta. Highest attention in the ramp, still off the red axis: escalate routes to
+   * a human, it does not conclude anything. */
+  --vi-p-d-escalate-bg: #2b1224;
+  --vi-p-d-escalate-fg: #f49bc6;
+  --vi-p-d-escalate-border: #c55c93;
+
+  /* --- dark elevation ------------------------------------------------------------------------ */
+  /* On dark, elevation is carried by the `surface-raised` luminance step, NOT by these shadows: a
+   * projector crushes low-contrast gradients to nothing. The shadows are a bonus on a real screen. */
+  --vi-p-d-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(0 0 0 / 0.25);
+  --vi-p-d-shadow-md: 0 8px 24px -6px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(0 0 0 / 0.3);
+
+  /* --- light surfaces ------------------------------------------------------------------------ */
+  --vi-p-l-bg: #eef1f6;
+  --vi-p-l-surface: #ffffff;
+  --vi-p-l-surface-raised: #ffffff;
+  --vi-p-l-border: #d3dae4;
+  --vi-p-l-border-strong: #6e7c8c;
+
+  /* --- light ink ----------------------------------------------------------------------------- */
+  --vi-p-l-text: #131a24;
+  --vi-p-l-text-muted: #4a5867;
+  --vi-p-l-text-subtle: #5d6a78;
+  --vi-p-l-text-inverse: #ffffff;
+
+  /* --- light interactive --------------------------------------------------------------------- */
+  --vi-p-l-accent: #1a6c90;
+  --vi-p-l-focus: #0b5d7e;
+
+  /* --- light risk states --------------------------------------------------------------------- */
+  --vi-p-l-collecting-bg: #e6f3fb;
+  --vi-p-l-collecting-fg: #0f5273;
+  --vi-p-l-collecting-border: #2e7ea8;
+  --vi-p-l-uncertain-bg: #fdf3df;
+  --vi-p-l-uncertain-fg: #6b4a05;
+  --vi-p-l-uncertain-border: #96741a;
+  --vi-p-l-high-bg: #f1eafe;
+  --vi-p-l-high-fg: #4a2a87;
+  --vi-p-l-high-border: #7255b8;
+  --vi-p-l-ineligible-bg: #edf0f5;
+  --vi-p-l-ineligible-fg: #56626f;
+  --vi-p-l-ineligible-border: #77838f;
+
+  /* --- light actions ------------------------------------------------------------------------- */
+  --vi-p-l-continue-bg: #edf2f7;
+  --vi-p-l-continue-fg: #35485c;
+  --vi-p-l-continue-border: #6b7c8d;
+  --vi-p-l-verify-bg: #fdf3df;
+  --vi-p-l-verify-fg: #6b4a05;
+  --vi-p-l-verify-border: #9a7a1e;
+  --vi-p-l-hold-bg: #f1eafe;
+  --vi-p-l-hold-fg: #452683;
+  --vi-p-l-hold-border: #7255b8;
+  --vi-p-l-escalate-bg: #fde9f3;
+  --vi-p-l-escalate-fg: #7a1350;
+  --vi-p-l-escalate-border: #b03a78;
+
+  /* --- light elevation ----------------------------------------------------------------------- */
+  --vi-p-l-shadow-sm: 0 1px 2px rgb(19 26 36 / 0.08), 0 1px 3px rgb(19 26 36 / 0.06);
+  --vi-p-l-shadow-md: 0 8px 24px -6px rgb(19 26 36 / 0.16), 0 2px 6px rgb(19 26 36 / 0.06);
+}
+
+/* ==================================================================================================
+ * 2. NON-THEMED SCALES — identical in light and dark
+ * ================================================================================================== */
+
+:root {
+  /* --- type stacks ---------------------------------------------------------------------------
+   * System stacks only (no CDN — see the header). Ordered so the demo laptop (Windows 11),
+   * the analyst handset (Android Chromium / iOS Safari), and macOS all land on a real UI face
+   * rather than a synthesised fallback. */
+  --vi-font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif;
+  --vi-font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, 'Cascadia Mono', 'Cascadia Code', Menlo, Consolas,
+    'Liberation Mono', 'Roboto Mono', 'Noto Sans Mono', 'DejaVu Sans Mono', monospace;
+
+  /* Applied to every numeric readout. `tnum` fixes the advance width so a `spoof_risk` value
+   * updating four times a second does not reflow its own container; `lnum` prevents old-style
+   * figures on faces that default to them; `zero` slashes the zero where the face supports it, so
+   * 0 / O cannot be confused in a hex `call_ref` read aloud from a projector. */
+  --vi-font-feature-numeric: 'tnum' 1, 'lnum' 1, 'zero' 1;
+
+  /* --- type scale (root 16px) ---------------------------------------------------------------- */
+  --vi-text-xs: 0.75rem;    /* 12px — reason codes, version strings, axis ticks */
+  --vi-text-sm: 0.875rem;   /* 14px — labels, mono metadata */
+  --vi-text-base: 1rem;     /* 16px — body. Also the input floor: iOS Safari zooms below 16px. */
+  --vi-text-lg: 1.125rem;   /* 18px — card titles */
+  --vi-text-xl: 1.375rem;   /* 22px — screen titles */
+  --vi-text-2xl: 1.75rem;   /* 28px — action label, handset */
+  --vi-text-3xl: 2.5rem;    /* 40px — action label, projector layout (>=1024px) */
+
+  --vi-leading-tight: 1.15;   /* headings and the action label */
+  --vi-leading-normal: 1.45;  /* UI text */
+  --vi-leading-relaxed: 1.65; /* consent prose — the one place people actually read sentences */
+
+  --vi-weight-regular: 400;
+  --vi-weight-medium: 500;
+  --vi-weight-semibold: 600;
+  /* No 700. Above 600 the Windows/Android fallback faces are commonly synthesised, and synthetic
+   * bold at projector scale fills counters and loses more legibility than it gains. */
+
+  --vi-tracking-tight: -0.011em; /* >= --vi-text-2xl only */
+  --vi-tracking-wide: 0.02em;    /* mono codes at --vi-text-xs */
+
+  /* --- space, 4px base ----------------------------------------------------------------------- */
+  --vi-space-1: 0.25rem; /*  4px */
+  --vi-space-2: 0.5rem;  /*  8px */
+  --vi-space-3: 0.75rem; /* 12px */
+  --vi-space-4: 1rem;    /* 16px */
+  --vi-space-5: 1.25rem; /* 20px */
+  --vi-space-6: 1.5rem;  /* 24px */
+  --vi-space-7: 2rem;    /* 32px */
+  --vi-space-8: 3rem;    /* 48px */
+
+  /* --- radius -------------------------------------------------------------------------------- */
+  --vi-radius-sm: 4px;   /* timeline cells, chips */
+  --vi-radius-md: 8px;   /* inputs, buttons */
+  --vi-radius-lg: 14px;  /* cards, banner */
+  --vi-radius-full: 999px;
+
+  /* --- motion --------------------------------------------------------------------------------
+   * Durations are short on purpose. Screen-captured demo footage is commonly 24–30 fps with
+   * temporal compression; anything slower than ~320ms reads as a smear rather than a transition. */
+  --vi-dur-fast: 120ms;
+  --vi-dur-base: 200ms;
+  --vi-dur-slow: 320ms;
+  --vi-ease-out: cubic-bezier(0.2, 0.8, 0.24, 1);
+  --vi-ease-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+
+  /* --- structure -----------------------------------------------------------------------------
+   * Shared geometry. These live here rather than in component CSS because `design.md` §5 states
+   * the numbers and two agents must not each pick their own. */
+  --vi-border-width: 1px;
+  --vi-border-width-strong: 2px;
+  --vi-rail-w: 4px;             /* ActionBanner / sticky-high left rail: the position channel */
+  --vi-banner-min-h: 96px;      /* handset; 128px at the projector breakpoint */
+  --vi-cell-w: 18px;            /* RiskTimeline cell — ordinal by window_seq, never time-scaled */
+  --vi-cell-gap: 4px;
+  --vi-timeline-h: 120px;
+  --vi-touch-min: 44px;         /* minimum interactive target on the handset */
+  --vi-measure: 34rem;          /* prose measure — consent copy stays inside this */
+  --vi-content-max: 40rem;      /* single-column decision surface */
+
+  --vi-focus-width: 2px;
+  --vi-focus-offset: 2px;       /* load-bearing: puts the ring against the page, not the control */
+
+  --vi-hatch-gap: 4px;          /* ineligible hatch pitch; tightened under prefers-contrast: more */
+  --vi-hatch-line: 1px;
+}
+
+/* ==================================================================================================
+ * 3. SEMANTIC ALIASES — var() references only, no hex below this line
+ * ================================================================================================== */
+
+/* --- 3a. DEFAULT THEME: DARK ------------------------------------------------------------------ */
+:root {
+  color-scheme: dark;
+
+  --vi-bg: var(--vi-p-d-bg);
+  --vi-surface: var(--vi-p-d-surface);
+  --vi-surface-raised: var(--vi-p-d-surface-raised);
+  --vi-border: var(--vi-p-d-border);
+  --vi-border-strong: var(--vi-p-d-border-strong);
+
+  --vi-text: var(--vi-p-d-text);
+  --vi-text-muted: var(--vi-p-d-text-muted);
+  --vi-text-subtle: var(--vi-p-d-text-subtle);
+  --vi-text-inverse: var(--vi-p-d-text-inverse);
+
+  --vi-accent: var(--vi-p-d-accent);
+  --vi-focus: var(--vi-p-d-focus);
+
+  --vi-state-collecting-bg: var(--vi-p-d-collecting-bg);
+  --vi-state-collecting-fg: var(--vi-p-d-collecting-fg);
+  --vi-state-collecting-border: var(--vi-p-d-collecting-border);
+  --vi-state-uncertain-bg: var(--vi-p-d-uncertain-bg);
+  --vi-state-uncertain-fg: var(--vi-p-d-uncertain-fg);
+  --vi-state-uncertain-border: var(--vi-p-d-uncertain-border);
+  --vi-state-high-bg: var(--vi-p-d-high-bg);
+  --vi-state-high-fg: var(--vi-p-d-high-fg);
+  --vi-state-high-border: var(--vi-p-d-high-border);
+  --vi-state-ineligible-bg: var(--vi-p-d-ineligible-bg);
+  --vi-state-ineligible-fg: var(--vi-p-d-ineligible-fg);
+  --vi-state-ineligible-border: var(--vi-p-d-ineligible-border);
+
+  --vi-action-continue-bg: var(--vi-p-d-continue-bg);
+  --vi-action-continue-fg: var(--vi-p-d-continue-fg);
+  --vi-action-continue-border: var(--vi-p-d-continue-border);
+  --vi-action-verify-bg: var(--vi-p-d-verify-bg);
+  --vi-action-verify-fg: var(--vi-p-d-verify-fg);
+  --vi-action-verify-border: var(--vi-p-d-verify-border);
+  --vi-action-hold-bg: var(--vi-p-d-hold-bg);
+  --vi-action-hold-fg: var(--vi-p-d-hold-fg);
+  --vi-action-hold-border: var(--vi-p-d-hold-border);
+  --vi-action-escalate-bg: var(--vi-p-d-escalate-bg);
+  --vi-action-escalate-fg: var(--vi-p-d-escalate-fg);
+  --vi-action-escalate-border: var(--vi-p-d-escalate-border);
+
+  --vi-shadow-sm: var(--vi-p-d-shadow-sm);
+  --vi-shadow-md: var(--vi-p-d-shadow-md);
+
+  /* Composed values. Derived from the aliases above so they re-resolve per theme automatically. */
+
+  /* Ineligible windows: a hatched stub, not a short bar. `rules.md` R-09 — a codec-degraded window
+   * is absence of evidence, and a low bar would read as evidence of low risk. */
+  --vi-hatch-ineligible: repeating-linear-gradient(
+    135deg,
+    var(--vi-state-ineligible-bg) 0 var(--vi-hatch-gap),
+    var(--vi-state-ineligible-border) var(--vi-hatch-gap)
+      calc(var(--vi-hatch-gap) + var(--vi-hatch-line))
+  );
+
+  /* System-fault treatment: neutrals only, chromatically OUTSIDE the evidence ramp. A dropped
+   * WebSocket or a 1008 close must never borrow `uncertain` amber or `high` violet, or an
+   * infrastructure failure becomes indistinguishable from accumulated voice evidence. */
+  --vi-fault-bg: var(--vi-surface-raised);
+  --vi-fault-fg: var(--vi-text);
+  --vi-fault-border: var(--vi-border-strong);
+
+  /* Applied to a rendered decision once the stream is no longer live. A `hold` banner at full
+   * strength over a dead socket implies a live control that is not live.
+   *
+   * THE VALUE IS 0.88 BECAUSE OPACITY IS THE WRONG CHANNEL FOR THIS, AND THE ARITHMETIC SAYS SO.
+   * `opacity` composites the whole subtree — text included — against `--vi-bg`. Measured in
+   * `design.md` §2.6: at 0.6 the four action labels land at 2.91–4.40:1 and their borders at
+   * 2.07–2.61:1, failing both the 4.5:1 body floor and the 3:1 non-text floor. The lowest value at
+   * which every action label still clears 4.5:1 AND every action border still clears 3:1, in both
+   * themes, is 0.88 — and a 12% dim is far too weak to carry a state on a projector.
+   *
+   * So the dim is a NUANCE, not the signal. Staleness is carried by a dashed `--vi-border-strong`
+   * boundary, a literal "not live" line of text, and a frozen `window_seq` (`design.md` §5.4, §6).
+   * Do not lower this number to make the dim more visible; that trades a measured contrast
+   * guarantee for an effect that still would not read at 3 metres. */
+  --vi-stale-opacity: 0.88;
+}
+
+/* --- 3b. LIGHT via prefers-color-scheme ------------------------------------------------------- */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --vi-bg: var(--vi-p-l-bg);
+    --vi-surface: var(--vi-p-l-surface);
+    --vi-surface-raised: var(--vi-p-l-surface-raised);
+    --vi-border: var(--vi-p-l-border);
+    --vi-border-strong: var(--vi-p-l-border-strong);
+
+    --vi-text: var(--vi-p-l-text);
+    --vi-text-muted: var(--vi-p-l-text-muted);
+    --vi-text-subtle: var(--vi-p-l-text-subtle);
+    --vi-text-inverse: var(--vi-p-l-text-inverse);
+
+    --vi-accent: var(--vi-p-l-accent);
+    --vi-focus: var(--vi-p-l-focus);
+
+    --vi-state-collecting-bg: var(--vi-p-l-collecting-bg);
+    --vi-state-collecting-fg: var(--vi-p-l-collecting-fg);
+    --vi-state-collecting-border: var(--vi-p-l-collecting-border);
+    --vi-state-uncertain-bg: var(--vi-p-l-uncertain-bg);
+    --vi-state-uncertain-fg: var(--vi-p-l-uncertain-fg);
+    --vi-state-uncertain-border: var(--vi-p-l-uncertain-border);
+    --vi-state-high-bg: var(--vi-p-l-high-bg);
+    --vi-state-high-fg: var(--vi-p-l-high-fg);
+    --vi-state-high-border: var(--vi-p-l-high-border);
+    --vi-state-ineligible-bg: var(--vi-p-l-ineligible-bg);
+    --vi-state-ineligible-fg: var(--vi-p-l-ineligible-fg);
+    --vi-state-ineligible-border: var(--vi-p-l-ineligible-border);
+
+    --vi-action-continue-bg: var(--vi-p-l-continue-bg);
+    --vi-action-continue-fg: var(--vi-p-l-continue-fg);
+    --vi-action-continue-border: var(--vi-p-l-continue-border);
+    --vi-action-verify-bg: var(--vi-p-l-verify-bg);
+    --vi-action-verify-fg: var(--vi-p-l-verify-fg);
+    --vi-action-verify-border: var(--vi-p-l-verify-border);
+    --vi-action-hold-bg: var(--vi-p-l-hold-bg);
+    --vi-action-hold-fg: var(--vi-p-l-hold-fg);
+    --vi-action-hold-border: var(--vi-p-l-hold-border);
+    --vi-action-escalate-bg: var(--vi-p-l-escalate-bg);
+    --vi-action-escalate-fg: var(--vi-p-l-escalate-fg);
+    --vi-action-escalate-border: var(--vi-p-l-escalate-border);
+
+    --vi-shadow-sm: var(--vi-p-l-shadow-sm);
+    --vi-shadow-md: var(--vi-p-l-shadow-md);
+  }
+}
+
+/* --- 3c. EXPLICIT OVERRIDES ------------------------------------------------------------------
+ * `:root[data-vi-theme='…']` (specificity 0,2,0) beats the `:root` blocks above (0,1,0) in both
+ * branches, so these win regardless of what the OS reports. Set once at boot from a query
+ * parameter or a rehearsal setting; do not toggle mid-session. */
+
+:root[data-vi-theme='dark'] {
+  color-scheme: dark;
+
+  --vi-bg: var(--vi-p-d-bg);
+  --vi-surface: var(--vi-p-d-surface);
+  --vi-surface-raised: var(--vi-p-d-surface-raised);
+  --vi-border: var(--vi-p-d-border);
+  --vi-border-strong: var(--vi-p-d-border-strong);
+
+  --vi-text: var(--vi-p-d-text);
+  --vi-text-muted: var(--vi-p-d-text-muted);
+  --vi-text-subtle: var(--vi-p-d-text-subtle);
+  --vi-text-inverse: var(--vi-p-d-text-inverse);
+
+  --vi-accent: var(--vi-p-d-accent);
+  --vi-focus: var(--vi-p-d-focus);
+
+  --vi-state-collecting-bg: var(--vi-p-d-collecting-bg);
+  --vi-state-collecting-fg: var(--vi-p-d-collecting-fg);
+  --vi-state-collecting-border: var(--vi-p-d-collecting-border);
+  --vi-state-uncertain-bg: var(--vi-p-d-uncertain-bg);
+  --vi-state-uncertain-fg: var(--vi-p-d-uncertain-fg);
+  --vi-state-uncertain-border: var(--vi-p-d-uncertain-border);
+  --vi-state-high-bg: var(--vi-p-d-high-bg);
+  --vi-state-high-fg: var(--vi-p-d-high-fg);
+  --vi-state-high-border: var(--vi-p-d-high-border);
+  --vi-state-ineligible-bg: var(--vi-p-d-ineligible-bg);
+  --vi-state-ineligible-fg: var(--vi-p-d-ineligible-fg);
+  --vi-state-ineligible-border: var(--vi-p-d-ineligible-border);
+
+  --vi-action-continue-bg: var(--vi-p-d-continue-bg);
+  --vi-action-continue-fg: var(--vi-p-d-continue-fg);
+  --vi-action-continue-border: var(--vi-p-d-continue-border);
+  --vi-action-verify-bg: var(--vi-p-d-verify-bg);
+  --vi-action-verify-fg: var(--vi-p-d-verify-fg);
+  --vi-action-verify-border: var(--vi-p-d-verify-border);
+  --vi-action-hold-bg: var(--vi-p-d-hold-bg);
+  --vi-action-hold-fg: var(--vi-p-d-hold-fg);
+  --vi-action-hold-border: var(--vi-p-d-hold-border);
+  --vi-action-escalate-bg: var(--vi-p-d-escalate-bg);
+  --vi-action-escalate-fg: var(--vi-p-d-escalate-fg);
+  --vi-action-escalate-border: var(--vi-p-d-escalate-border);
+
+  --vi-shadow-sm: var(--vi-p-d-shadow-sm);
+  --vi-shadow-md: var(--vi-p-d-shadow-md);
+}
+
+:root[data-vi-theme='light'] {
+  color-scheme: light;
+
+  --vi-bg: var(--vi-p-l-bg);
+  --vi-surface: var(--vi-p-l-surface);
+  --vi-surface-raised: var(--vi-p-l-surface-raised);
+  --vi-border: var(--vi-p-l-border);
+  --vi-border-strong: var(--vi-p-l-border-strong);
+
+  --vi-text: var(--vi-p-l-text);
+  --vi-text-muted: var(--vi-p-l-text-muted);
+  --vi-text-subtle: var(--vi-p-l-text-subtle);
+  --vi-text-inverse: var(--vi-p-l-text-inverse);
+
+  --vi-accent: var(--vi-p-l-accent);
+  --vi-focus: var(--vi-p-l-focus);
+
+  --vi-state-collecting-bg: var(--vi-p-l-collecting-bg);
+  --vi-state-collecting-fg: var(--vi-p-l-collecting-fg);
+  --vi-state-collecting-border: var(--vi-p-l-collecting-border);
+  --vi-state-uncertain-bg: var(--vi-p-l-uncertain-bg);
+  --vi-state-uncertain-fg: var(--vi-p-l-uncertain-fg);
+  --vi-state-uncertain-border: var(--vi-p-l-uncertain-border);
+  --vi-state-high-bg: var(--vi-p-l-high-bg);
+  --vi-state-high-fg: var(--vi-p-l-high-fg);
+  --vi-state-high-border: var(--vi-p-l-high-border);
+  --vi-state-ineligible-bg: var(--vi-p-l-ineligible-bg);
+  --vi-state-ineligible-fg: var(--vi-p-l-ineligible-fg);
+  --vi-state-ineligible-border: var(--vi-p-l-ineligible-border);
+
+  --vi-action-continue-bg: var(--vi-p-l-continue-bg);
+  --vi-action-continue-fg: var(--vi-p-l-continue-fg);
+  --vi-action-continue-border: var(--vi-p-l-continue-border);
+  --vi-action-verify-bg: var(--vi-p-l-verify-bg);
+  --vi-action-verify-fg: var(--vi-p-l-verify-fg);
+  --vi-action-verify-border: var(--vi-p-l-verify-border);
+  --vi-action-hold-bg: var(--vi-p-l-hold-bg);
+  --vi-action-hold-fg: var(--vi-p-l-hold-fg);
+  --vi-action-hold-border: var(--vi-p-l-hold-border);
+  --vi-action-escalate-bg: var(--vi-p-l-escalate-bg);
+  --vi-action-escalate-fg: var(--vi-p-l-escalate-fg);
+  --vi-action-escalate-border: var(--vi-p-l-escalate-border);
+
+  --vi-shadow-sm: var(--vi-p-l-shadow-sm);
+  --vi-shadow-md: var(--vi-p-l-shadow-md);
+}
+
+/* ==================================================================================================
+ * 4. PREFERENCE OVERRIDES that belong to the token layer
+ * ================================================================================================== */
+
+/* Higher contrast: drop the tint fills, promote every meaningful boundary, tighten the hatch.
+ * Setting each state `-border` to its own `-fg` is provably safe — every `-fg` is already measured
+ * at >=4.5:1 against `--vi-surface`, which exceeds the 3:1 non-text requirement. */
+@media (prefers-contrast: more) {
+  :root {
+    --vi-border: var(--vi-border-strong);
+    --vi-border-width: 2px;
+    --vi-hatch-gap: 3px;
+    --vi-hatch-line: 2px;
+    --vi-focus-width: 3px;
+
+    --vi-state-collecting-bg: var(--vi-surface);
+    --vi-state-collecting-border: var(--vi-state-collecting-fg);
+    --vi-state-uncertain-bg: var(--vi-surface);
+    --vi-state-uncertain-border: var(--vi-state-uncertain-fg);
+    --vi-state-high-bg: var(--vi-surface);
+    --vi-state-high-border: var(--vi-state-high-fg);
+    --vi-state-ineligible-bg: var(--vi-surface);
+    --vi-state-ineligible-border: var(--vi-state-ineligible-fg);
+
+    --vi-action-continue-bg: var(--vi-surface);
+    --vi-action-continue-border: var(--vi-action-continue-fg);
+    --vi-action-verify-bg: var(--vi-surface);
+    --vi-action-verify-border: var(--vi-action-verify-fg);
+    --vi-action-hold-bg: var(--vi-surface);
+    --vi-action-hold-border: var(--vi-action-hold-fg);
+    --vi-action-escalate-bg: var(--vi-surface);
+    --vi-action-escalate-border: var(--vi-action-escalate-fg);
+
+    /* A user who asked for more contrast gets no dimming at all. The dashed boundary and the
+     * "not live" text still carry the state, so nothing is lost by removing the dim. */
+    --vi-stale-opacity: 1;
+  }
+}
+
+/* Reduced transparency is honoured by keeping every token opaque: there is no rgba tint anywhere in
+ * the palette, so nothing needs to change. Recorded here so a future contributor does not add one. */
+
+/* Reduced motion: durations collapse in `global.css`. Mirrored here so a component reading a
+ * duration token directly gets the same answer as one relying on the global transition reset. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --vi-dur-fast: 1ms;
+    --vi-dur-base: 1ms;
+    --vi-dur-slow: 1ms;
+  }
+}
+
+/* Forced colours (Windows high-contrast, and the general case of "all hue is destroyed"). Every
+ * chromatic token collapses to a system colour; the glyph silhouette and label text are what carry
+ * state here, which is exactly why they are mandatory rather than decorative. */
+@media (forced-colors: active) {
+  :root {
+    --vi-bg: Canvas;
+    --vi-surface: Canvas;
+    --vi-surface-raised: Canvas;
+    --vi-border: CanvasText;
+    --vi-border-strong: CanvasText;
+
+    --vi-text: CanvasText;
+    --vi-text-muted: CanvasText;
+    --vi-text-subtle: CanvasText;
+    --vi-text-inverse: Canvas;
+
+    --vi-accent: Highlight;
+    --vi-focus: Highlight;
+
+    --vi-state-collecting-bg: Canvas;
+    --vi-state-collecting-fg: CanvasText;
+    --vi-state-collecting-border: CanvasText;
+    --vi-state-uncertain-bg: Canvas;
+    --vi-state-uncertain-fg: CanvasText;
+    --vi-state-uncertain-border: CanvasText;
+    --vi-state-high-bg: Canvas;
+    --vi-state-high-fg: CanvasText;
+    --vi-state-high-border: CanvasText;
+    --vi-state-ineligible-bg: Canvas;
+    --vi-state-ineligible-fg: GrayText;
+    --vi-state-ineligible-border: GrayText;
+
+    --vi-action-continue-bg: Canvas;
+    --vi-action-continue-fg: CanvasText;
+    --vi-action-continue-border: CanvasText;
+    --vi-action-verify-bg: Canvas;
+    --vi-action-verify-fg: CanvasText;
+    --vi-action-verify-border: CanvasText;
+    --vi-action-hold-bg: Canvas;
+    --vi-action-hold-fg: CanvasText;
+    --vi-action-hold-border: CanvasText;
+    --vi-action-escalate-bg: Canvas;
+    --vi-action-escalate-fg: CanvasText;
+    --vi-action-escalate-border: CanvasText;
+
+    --vi-fault-border: CanvasText;
+    --vi-shadow-sm: none;
+    --vi-shadow-md: none;
+    --vi-stale-opacity: 1;
+  }
+}

@@ -1,0 +1,309 @@
+# Scorer CI — lint, type-check, unit tests, and (on `main` only) build + push BOTH scorer images.
+#
+# TWO IMAGES, ONE JOB, ONE CHECKOUT
+# ---------------------------------
+# scorer/Dockerfile builds either tier from one build argument (`ORT_PACKAGE`), into two ECR
+# repositories: sih26104/scorer-cpu and sih26104/scorer-gpu. They are built here in a single job with a
+# loop rather than a two-leg matrix, for two reasons:
+#
+#   1. Parity is the whole point. One job, one checkout, one loop makes "both tiers were built from the
+#      same source tree" a property of the code rather than a claim about scheduling. The two images
+#      cannot be byte-identical — that is the documented parity exception (architecture.md 5.1,
+#      rules.md R-06) — but everything in the parity set must be, and the parity set includes the
+#      application source.
+#   2. A `strategy.matrix` job cannot emit one output per leg. GitHub writes job outputs once per leg
+#      and the last leg to finish wins for EVERY key, so a matrix would silently hand downstream jobs
+#      an empty digest for one tier. An empty digest read by a deploy step means "no override", i.e.
+#      ship whatever was there before. Promotion-by-digest (rules.md R-56) cannot be built on a
+#      mechanism that fails to an empty string.
+#
+# THE GPU IMAGE IS BUILT ON A CPU RUNNER, AND THAT IS FINE
+# -------------------------------------------------------
+# Building the GPU image installs onnxruntime-gpu and the CUDA/cuDNN pip wheels. It does not run them.
+# No GPU is consumed here — rules.md R-32 allows exactly one g4dn.xlarge for the whole five-day window
+# and it is not spent on a build. The cost is time and cache: the CUDA wheel set is roughly 2.5 GB, so
+# this job is minutes rather than seconds, which is why it only runs on `main` and not on every PR.
+#
+# NOTHING HERE STARTS ANYTHING
+# ---------------------------
+# No `ecs update-service`, no `autoscaling update-auto-scaling-group`. rules.md R-29. The only path
+# that raises a desired count is .github/workflows/deploy-runtime.yml on workflow_dispatch.
+name: scorer-ci
+
+on:
+  pull_request:
+    paths:
+      - "scorer/**"
+      - "contracts/**"
+      - "policy/calibration.json"
+      - "scripts/gen_proto.sh"
+      - ".github/workflows/scorer-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scorer/**"
+      - "contracts/**"
+      - "policy/calibration.json"
+      - "scripts/gen_proto.sh"
+      - ".github/workflows/scorer-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scorer-ci-${{ github.ref }}
+  # Never cancel on `main`: a cancelled run between the two tier pushes leaves the CPU image published
+  # and the GPU image absent, which is the one state where a deploy could pair mismatched tiers.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint (ruff + mypy)
+    runs-on: ubuntu-24.04
+    steps:
+      # See the pinning note in gateway-ci.yml: these are exact published versions, not commit SHAs.
+      # Resolving SHAs needs network access that was unavailable when this file was written. Phase 0
+      # follow-up, and until then this is version pinning, not supply-chain pinning (rules.md R-01).
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          # Must match scorer/Dockerfile's python:3.12-slim for BOTH tiers. A CI interpreter that
+          # differs from the image interpreter makes a green lint run evidence about nothing.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scorer/requirements-dev.txt
+
+      - name: Install dev dependencies
+        working-directory: scorer
+        # requirements-dev.txt pulls in onnxruntime (CPU). That is deliberate and documented there: the
+        # unit suite constructs a real InferenceSession to exercise the provider assertion in
+        # app/model.py, which is the check that turns a silent CPU fallback into a crash (rules.md R-45).
+        # Testing that path with a mock would test the mock.
+        #
+        # `--break-system-packages` from the source plan is not used. actions/setup-python supplies a
+        # non-externally-managed interpreter, so the flag is a no-op here — and copying a no-op override
+        # of PEP 668 into other contexts disables a real guard rail. Noted per rules.md R-52.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: ruff (lint)
+        working-directory: scorer
+        run: ruff check --output-format=github .
+
+      - name: ruff (format check)
+        working-directory: scorer
+        run: ruff format --check --diff .
+
+      - name: mypy (strict)
+        working-directory: scorer
+        run: mypy app
+
+  test:
+    name: unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scorer/requirements-dev.txt
+
+      - name: Install dev dependencies
+        working-directory: scorer
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      # The stubs are committed artifacts. Regenerating and diffing is what stops the failure where the
+      # Gateway sets a field the Scorer no longer reads: both sides compile, the RPC succeeds, and the
+      # value is silently the proto default. scripts/gen_proto.sh belongs to this service's pair; this
+      # step only invokes it.
+      - name: Regenerate protobuf stubs and assert no drift
+        run: |
+          set -euo pipefail
+          ./scripts/gen_proto.sh
+          if ! git diff --quiet -- scorer/app/voice_scorer_pb2.py scorer/app/voice_scorer_pb2_grpc.py; then
+            echo "::error title=Stale protobuf stubs::scorer/app stubs differ from what gen_proto.sh produces from contracts/voice_scorer.proto. Run scripts/gen_proto.sh and commit the result."
+            git --no-pager diff --stat -- scorer/app
+            exit 1
+          fi
+          echo "committed stubs match contracts/voice_scorer.proto"
+
+      - name: pytest (unit, excluding integration)
+        working-directory: scorer
+        run: pytest -m "not integration"
+
+  build-push:
+    name: build and push scorer images (cpu + gpu)
+    # Merge to `main` only. Until the OIDC trust policy is tightened from `repo:<org>/<repo>:*` to a
+    # branch-scoped `sub` (aws-setup-instructions.md section 3.2), this `if` is the control that keeps a
+    # fork pull request out of ECR. Do not relax it.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, test]
+    runs-on: ubuntu-24.04
+    env:
+      # Pinned literal, per job. `${{ vars.AWS_REGION }}` is the empty string if the variable was never
+      # set, and an empty region does not fail — it resolves to the runner's ambient default, which is
+      # not ap-south-1. That mistake succeeds against the wrong account resources.
+      AWS_REGION: ap-south-1
+      # The ORT version is pinned in scorer/requirements-dev.txt and in the Dockerfile's ARG default.
+      # It is restated here only because the tier switch is passed as a build argument, and a build
+      # argument that disagrees with the pinned wheel would produce two tiers linked against different
+      # ORT versions — a parity-set violation that no test would catch.
+      ORT_VERSION: "1.20.1"
+    permissions:
+      contents: read
+      id-token: write # rules.md R-55 — OIDC. No AWS_ACCESS_KEY_ID exists in this repository.
+    outputs:
+      # scorer_gpu_digest is the one deploy-runtime.yml consumes. The CPU digest is emitted too so a
+      # release manifest can record the local-tier artifact it was validated against; the CPU tier is
+      # where every day of development actually happens.
+      scorer_gpu_digest: ${{ steps.resolve.outputs.gpu_digest }}
+      scorer_cpu_digest: ${{ steps.resolve.outputs.cpu_digest }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Fail early if the deploy role variable is unset
+        run: |
+          set -euo pipefail
+          if [ -z "${{ vars.AWS_DEPLOY_ROLE_ARN }}" ]; then
+            echo "::error title=AWS_DEPLOY_ROLE_ARN is not set::Set it with: gh variable set AWS_DEPLOY_ROLE_ARN --body arn:aws:iam::<account-id>:role/gh-actions-deploy-role"
+            exit 1
+          fi
+
+      - name: Assume gh-actions-deploy-role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: scorer-ci-${{ github.run_id }}
+          # Longer than the Gateway's 1800s: this job pulls the CUDA wheel set and pushes two images.
+          # Still bounded, and still a per-run token that expires — unlike a stored access key.
+          role-duration-seconds: 3600
+
+      - name: Log in to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2.0.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3.7.1
+
+      # -----------------------------------------------------------------------------------------------
+      # Build both tiers. Sequential, in one shell, with the tier difference visible on one line.
+      #
+      # Each tier is skipped if an image already exists for this commit. That is not a workaround for
+      # IMMUTABLE tags — it is the rule: a rebuild of identical source produces different bytes (apt
+      # mirror state, wheel resolution order, timestamps), so rebuilding silently invalidates a digest
+      # a release manifest may already name (rules.md R-56, R-51). Reusing the existing digest is the
+      # correct behaviour, and the tag immutability is the registry enforcing it rather than trusting
+      # this script.
+      # -----------------------------------------------------------------------------------------------
+      - name: Build and push both tiers
+        id: resolve
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # tier | ECR repository | ORT_PACKAGE | CUDA pip wheels
+          # The CUDA wheel set is UNVERIFIED on any machine in this project so far (see the note in
+          # scorer/Dockerfile). Getting it wrong is loud, not silent: app/model.py passes a
+          # single-entry provider list and asserts get_providers()[0], so a missing library raises
+          # before the port is bound. There is no path from a wrong value here to a task that comes up
+          # healthy on the CPU while claiming CUDA (rules.md R-45).
+          CUDA_WHEELS="nvidia-cudnn-cu12==9.5.1.17 nvidia-cublas-cu12==12.6.4.1 nvidia-cuda-runtime-cu12==12.6.77 nvidia-cuda-nvrtc-cu12==12.6.77 nvidia-cufft-cu12==11.3.0.4 nvidia-curand-cu12==10.3.7.77"
+
+          build_tier() {
+            local tier="$1" repo="$2" ort_package="$3" cuda_wheels="$4"
+            local existing
+            existing="$(aws ecr describe-images \
+              --region "$AWS_REGION" \
+              --repository-name "$repo" \
+              --image-ids "imageTag=${IMAGE_TAG}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text 2>/dev/null || true)"
+            if [ -n "$existing" ] && [ "$existing" != "None" ]; then
+              echo "::notice title=${tier}: reusing existing digest::${repo}:${IMAGE_TAG} already exists as ${existing}. NOT rebuilding (rules.md R-56)."
+              echo "${tier}_digest=${existing}" >> "$GITHUB_OUTPUT"
+              return 0
+            fi
+
+            echo "--- building ${tier} (${repo}) with ORT_PACKAGE=${ort_package} ---"
+            # Build context is the REPO ROOT, not scorer/. scorer/Dockerfile COPYs contracts/ so the
+            # image can hash contracts/voice_scorer.proto into the banner it prints at startup; a
+            # scorer/-scoped context cannot reach it. Same convention as the Gateway on purpose: a CI
+            # job that gets it wrong gets it wrong for both services and is caught immediately.
+            #
+            # provenance/sbom are disabled: with them on, Buildx pushes an OCI *index* and the digest
+            # reported is the index digest, not the image manifest digest. A release manifest must name
+            # the digest of the thing that actually runs (architecture.md 5.1), and those must be the
+            # same string.
+            docker buildx build \
+              --file scorer/Dockerfile \
+              --build-arg "ORT_VERSION=${ORT_VERSION}" \
+              --build-arg "ORT_PACKAGE=${ort_package}" \
+              --build-arg "CUDA_PIP_PACKAGES=${cuda_wheels}" \
+              --tag "${REGISTRY}/${repo}:${IMAGE_TAG}" \
+              --label "org.opencontainers.image.revision=${IMAGE_TAG}" \
+              --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --provenance=false \
+              --sbom=false \
+              --cache-from "type=gha,scope=scorer-${tier}" \
+              --cache-to "type=gha,scope=scorer-${tier},mode=max" \
+              --metadata-file "/tmp/meta-${tier}.json" \
+              --push \
+              .
+
+            local digest
+            digest="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("containerimage.digest",""))' "/tmp/meta-${tier}.json")"
+            case "$digest" in
+              sha256:*) : ;;
+              *)
+                # Fail closed. An empty digest downstream reads as "no override" to a deploy step, which
+                # would ship whatever the task definition already pointed at.
+                echo "::error title=${tier}: no digest::buildx reported no containerimage.digest. Refusing to emit an empty promotion target."
+                return 1
+                ;;
+            esac
+            echo "${tier}_digest=${digest}" >> "$GITHUB_OUTPUT"
+            echo "${tier} -> ${digest}"
+          }
+
+          build_tier cpu sih26104/scorer-cpu onnxruntime ""
+          build_tier gpu sih26104/scorer-gpu onnxruntime-gpu "$CUDA_WHEELS"
+
+      - name: Record the digests in the run summary
+        run: |
+          {
+            echo "### scorer images built"
+            echo
+            echo "| tier | repository | digest |"
+            echo "|---|---|---|"
+            echo "| cpu | \`sih26104/scorer-cpu\` | \`${{ steps.resolve.outputs.cpu_digest }}\` |"
+            echo "| gpu | \`sih26104/scorer-gpu\` | \`${{ steps.resolve.outputs.gpu_digest }}\` |"
+            echo
+            echo "commit \`${{ github.sha }}\`, ORT \`${{ env.ORT_VERSION }}\`."
+            echo
+            echo "The two images are **not** byte-identical and are not meant to be — that is the one"
+            echo "documented parity exception (architecture.md 5.1, rules.md R-06). What must match is the"
+            echo "parity set: application source, proto hash, model SHA-256, calibration SHA-256, Python"
+            echo "version, and scorer/requirements.txt. \`contract-check\` is the gate for that."
+            echo
+            echo "Promote the **gpu** digest to the GPU tier:"
+            echo
+            echo '```'
+            echo "gh workflow run deploy-runtime.yml \\"
+            echo "  -f gateway_image_digest=sha256:... \\"
+            echo "  -f scorer_image_digest=${{ steps.resolve.outputs.gpu_digest }} \\"
+            echo "  -f confirm_cost_aware='I understand this starts GPU spend'"
+            echo '```'
+            echo
+            echo "> Nothing was deployed by this run, and no GPU was started. Building the GPU image"
+            echo "> consumes no GPU (rules.md R-29, R-32)."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,84 @@
+/* ConsentNotice — the consent gate card.
+ *
+ * Tokens only; no literal colour, size, or spacing value appears below. The prose is the one place in
+ * this app where someone reads full sentences under time pressure, so it takes `--vi-leading-relaxed`
+ * and stays inside `--vi-measure`.
+ */
+
+.card {
+  display: grid;
+  gap: var(--vi-space-5);
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  padding: var(--vi-space-6);
+  background-color: var(--vi-surface);
+  border: var(--vi-border-width) solid var(--vi-border);
+  border-radius: var(--vi-radius-lg);
+  box-shadow: var(--vi-shadow-md);
+}
+
+.heading {
+  color: var(--vi-text);
+}
+
+.terms {
+  display: grid;
+  gap: var(--vi-space-4);
+}
+
+.term {
+  display: grid;
+  gap: var(--vi-space-1);
+  padding-inline-start: var(--vi-space-4);
+  /* A left rail per term, so the four commitments read as an itemised list on paper and under
+   * forced-colors, where the surface tint disappears. */
+  border-inline-start: var(--vi-rail-w) solid var(--vi-border-strong);
+}
+
+.term dt {
+  font-size: var(--vi-text-sm);
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+}
+
+.term dd {
+  max-inline-size: var(--vi-measure);
+  line-height: var(--vi-leading-relaxed);
+  color: var(--vi-text);
+}
+
+/* Mock mode and the demo-issuer label both use the `uncertain` ramp rather than a new colour: they are
+ * caveats about what the reading means, which is exactly what that ramp encodes. */
+.mock,
+.demo {
+  padding: var(--vi-space-3) var(--vi-space-4);
+  background-color: var(--vi-state-uncertain-bg);
+  color: var(--vi-state-uncertain-fg);
+  border: var(--vi-border-width-strong) solid var(--vi-state-uncertain-border);
+  border-radius: var(--vi-radius-md);
+  line-height: var(--vi-leading-relaxed);
+}
+
+.acknowledge {
+  min-block-size: var(--vi-touch-min);
+  padding: var(--vi-space-3) var(--vi-space-5);
+  font-size: var(--vi-text-lg);
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text-inverse);
+  background-color: var(--vi-accent);
+  border: var(--vi-border-width-strong) solid var(--vi-accent);
+  border-radius: var(--vi-radius-md);
+  text-align: center;
+  transition: opacity var(--vi-dur-fast) var(--vi-ease-out);
+}
+
+.acknowledge:hover {
+  opacity: 0.9;
+}
+
+.footnote {
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-muted);
+}

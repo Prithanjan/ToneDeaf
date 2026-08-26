@@ -1,0 +1,24 @@
+{
+  // `vite.config.ts` only. It is evaluated by Node before any browser exists, so it gets no DOM lib:
+  // if a `document` reference ever appears in here, this is where it fails.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    // Empty, not `["node"]`. The config below deliberately touches no Node builtin — no `process`, no
+    // `path`, no `fs` — so `@types/node` is not a dependency of this package. Every value it needs is
+    // a literal, which also means the dev server behaves identically on a teammate's machine and in CI.
+    "types": [],
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["vite.config.ts"]
+}

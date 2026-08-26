@@ -1,0 +1,256 @@
+/* RiskTimeline — ordinal window plot, state chip, numeric readouts.
+ *
+ * The state ramps are consumed through `[data-vi-state]`, which the token layer already redefines
+ * under `prefers-contrast: more` and `forced-colors: active`. Nothing here hard-codes a colour, so a
+ * projector or a greyscale print inherits the design system's fallbacks for free.
+ */
+
+.panel {
+  display: grid;
+  gap: var(--vi-space-4);
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  padding: var(--vi-space-5);
+  background-color: var(--vi-surface);
+  border: var(--vi-border-width) solid var(--vi-border);
+  border-radius: var(--vi-radius-lg);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.heading {
+  color: var(--vi-text);
+}
+
+/* The state chip: fill + border + glyph + word. Four channels, so losing any one still leaves three. */
+.stateLine {
+  display: inline-flex;
+  gap: var(--vi-space-2);
+  align-items: center;
+  padding: var(--vi-space-1) var(--vi-space-3);
+  border-radius: var(--vi-radius-full);
+  border: var(--vi-border-width-strong) solid;
+  max-width: none; /* physical: see `.label` in `ActionBanner.module.css` */
+}
+
+.stateLine[data-vi-state='collecting'] {
+  background-color: var(--vi-state-collecting-bg);
+  color: var(--vi-state-collecting-fg);
+  border-color: var(--vi-state-collecting-border);
+}
+
+.stateLine[data-vi-state='uncertain'] {
+  background-color: var(--vi-state-uncertain-bg);
+  color: var(--vi-state-uncertain-fg);
+  border-color: var(--vi-state-uncertain-border);
+}
+
+.stateLine[data-vi-state='high'] {
+  background-color: var(--vi-state-high-bg);
+  color: var(--vi-state-high-fg);
+  border-color: var(--vi-state-high-border);
+}
+
+.stateLabel {
+  font-size: var(--vi-text-sm);
+  font-weight: var(--vi-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+}
+
+.glyph {
+  inline-size: var(--vi-space-5);
+  block-size: var(--vi-space-5);
+}
+
+.sentence {
+  color: var(--vi-text-muted);
+  line-height: var(--vi-leading-normal);
+}
+
+/* The indeterminate placeholder. Amplitude and period come from the design system's single loop; no
+ * width animates, because a growing bar would imply a known total. */
+.awaiting {
+  padding: var(--vi-space-4);
+  color: var(--vi-state-collecting-fg);
+  background-color: var(--vi-state-collecting-bg);
+  border: var(--vi-border-width-strong) dashed var(--vi-state-collecting-border);
+  border-radius: var(--vi-radius-md);
+  line-height: var(--vi-leading-relaxed);
+  animation: vi-collecting-pulse 1.4s var(--vi-ease-out) infinite;
+}
+
+.truncation {
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-subtle);
+}
+
+/* Ordinal axis. Cells have a fixed width and gap and scroll horizontally; they are NEVER stretched to
+ * fill, because an axis that rescales as windows arrive makes an early window and a late window look
+ * like different amounts of evidence. */
+.plot {
+  display: flex;
+  gap: var(--vi-cell-gap);
+  align-items: flex-end;
+  block-size: var(--vi-timeline-h);
+  padding-block-end: var(--vi-space-1);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* The baseline is the axis: a stub sits ON it, so "no measurement" is visibly at zero rather than
+   * floating at some height a reader could mistake for a low score. */
+  border-block-end: var(--vi-border-width-strong) solid var(--vi-border-strong);
+  scrollbar-gutter: stable;
+}
+
+.cell {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  inline-size: var(--vi-cell-w);
+  block-size: 100%;
+}
+
+.bar {
+  inline-size: 100%;
+  /* Floor so a near-zero measured score is still a visible bar. A measured 0.01 must not be
+   * indistinguishable from a window that was never measured. */
+  min-block-size: var(--vi-space-1);
+  border: var(--vi-border-width) solid;
+  border-radius: var(--vi-radius-sm) var(--vi-radius-sm) 0 0;
+  /* A fade, and nothing more (design.md §5.2). NOT a height transition: a bar growing from the axis on
+   * arrival reads as the measurement being taken now, when it was taken before the event was sent and
+   * a window's score never changes once drawn. `prefers-reduced-motion` collapses this to 1ms in
+   * `global.css`, which costs no information — the score is in the accessible name either way. */
+  animation: cellIn var(--vi-dur-fast) var(--vi-ease-out);
+}
+
+@keyframes cellIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.bar[data-vi-state='collecting'] {
+  background-color: var(--vi-state-collecting-bg);
+  border-color: var(--vi-state-collecting-border);
+}
+
+.bar[data-vi-state='uncertain'] {
+  background-color: var(--vi-state-uncertain-bg);
+  border-color: var(--vi-state-uncertain-border);
+}
+
+.bar[data-vi-state='high'] {
+  background-color: var(--vi-state-high-bg);
+  border-color: var(--vi-state-high-border);
+}
+
+/* The skipped-window stub. Hatch fill comes from `.vi-hatch`; the height is a constant set inline.
+ * A dashed top edge is the second channel — it reads as "open, unfinished" next to a solid bar even
+ * with the hatch pattern flattened. */
+.stub {
+  border-color: var(--vi-state-ineligible-border);
+  border-block-start-style: dashed;
+  border-radius: 0;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-4);
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-muted);
+}
+
+.legendItem {
+  display: flex;
+  gap: var(--vi-space-2);
+  align-items: baseline;
+}
+
+.legendItem dt {
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text);
+}
+
+.swatch {
+  inline-size: var(--vi-cell-w);
+  block-size: var(--vi-space-5);
+  border: var(--vi-border-width) solid;
+  border-radius: var(--vi-radius-sm) var(--vi-radius-sm) 0 0;
+  align-self: center;
+}
+
+.swatch[data-vi-state='high'] {
+  background-color: var(--vi-state-high-bg);
+  border-color: var(--vi-state-high-border);
+}
+
+.swatchStub {
+  block-size: var(--vi-space-2);
+  border-color: var(--vi-state-ineligible-border);
+  border-block-start-style: dashed;
+  border-radius: 0;
+}
+
+/* Numeric readouts. `--vi-font-mono` with tabular figures comes from `.vi-num` in `global.css`; the
+ * `ch` width here holds the column steady so a digit does not shift horizontally every 640 ms. */
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--vi-space-3);
+  padding-block-start: var(--vi-space-3);
+  border-block-start: var(--vi-border-width) solid var(--vi-border);
+}
+
+.readout {
+  display: grid;
+  gap: var(--vi-space-1);
+}
+
+.readout dt {
+  font-size: var(--vi-text-xs);
+  color: var(--vi-text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+}
+
+.readout dd {
+  font-size: var(--vi-text-lg);
+  font-weight: var(--vi-weight-medium);
+  color: var(--vi-text);
+  min-inline-size: 6ch;
+}
+
+.footnote {
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-muted);
+  line-height: var(--vi-leading-normal);
+}
+
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-2);
+}
+
+.flag {
+  display: inline-flex;
+  gap: var(--vi-space-2);
+  align-items: baseline;
+  padding: var(--vi-space-1) var(--vi-space-3);
+  background-color: var(--vi-state-ineligible-bg);
+  color: var(--vi-state-ineligible-fg);
+  border: var(--vi-border-width) solid var(--vi-state-ineligible-border);
+  border-radius: var(--vi-radius-full);
+}
+
+.flagLabel {
+  font-size: var(--vi-text-sm);
+}

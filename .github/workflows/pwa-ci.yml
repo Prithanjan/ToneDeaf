@@ -1,0 +1,202 @@
+# PWA CI — type-check, lint, build, and audit the built bundle for things that must never ship to a
+# browser.
+#
+# WHY THIS WORKFLOW PUSHES NOTHING
+# -------------------------------
+# The PWA's deployment target is a private S3 bucket behind CloudFront OAC (architecture.md 4.2), and
+# that bucket is created by `EdgeStack`. This workflow deliberately does NOT sync to it:
+#
+#   * gh-actions-deploy-role's S3 grant is scoped to the CDK asset buckets, not to the site bucket
+#     (aws-setup-instructions.md section 3.3). A sync would be denied, and the honest response to that
+#     is to not write the step rather than to widen a least-privilege policy to make a convenience work.
+#   * infra/cdk is not yet populated, so the bucket name cannot be resolved from a stack output. A step
+#     that resolves an empty bucket name and then `aws s3 sync`s to it is a step that either fails
+#     confusingly or, worse, succeeds against something else.
+#
+# So the build artifact is uploaded to the run and the publish command is printed in the summary. When
+# EdgeStack lands, adding the sync is a small, reviewable change with a named IAM consequence. Recorded
+# rather than silently omitted, per rules.md R-52.
+#
+# WHAT THIS WORKFLOW DOES THAT THE OTHER TWO DO NOT
+# ------------------------------------------------
+# It audits the *built output*, not just the source. The bundle is the one artifact that leaves the
+# trust boundary entirely: it runs on a machine the team does not control, in a debugger anyone can
+# open. secret-scan.yml covers the repository; this covers what survives bundling, including the
+# sourcemaps — `sourcemap: true` in vite.config.ts means the original TypeScript ships alongside the
+# minified chunks, so "it was only in a comment" is not a defence.
+name: pwa-ci
+
+on:
+  pull_request:
+    paths:
+      - "pwa/**"
+      - "contracts/**"
+      - ".github/workflows/pwa-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "pwa/**"
+      - "contracts/**"
+      - ".github/workflows/pwa-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwa-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: typecheck, lint, build, bundle audit
+    runs-on: ubuntu-24.04
+    # No AWS in this job, so no `id-token: write` and no region. Both are absent on purpose rather than
+    # by oversight: a job that cannot reach AWS cannot misconfigure it (rules.md R-55).
+    steps:
+      # Exact published versions, not commit SHAs — see the pinning note in gateway-ci.yml. Version
+      # pinning, not supply-chain pinning; do not describe it as the latter (rules.md R-01).
+      - uses: actions/checkout@v4.2.2
+
+      - uses: actions/setup-node@v4.1.0
+        with:
+          # pwa/package.json declares engines.node >= 22. Pinned to a patch so a Node minor bump is a
+          # visible commit rather than a silent change in what the bundle was compiled by.
+          node-version: "22.11.0"
+          cache: npm
+          cache-dependency-path: pwa/package-lock.json
+
+      # `npm ci`, never `npm install`. `ci` installs exactly the lockfile; `install` is allowed to
+      # resolve a newer version inside a caret range and rewrite the lock, which would mean the bundle
+      # CI tested and the bundle a developer built came from different dependency trees. The lockfile is
+      # the only thing making the client reproducible.
+      - name: Install (npm ci — lockfile exactly)
+        working-directory: pwa
+        run: npm ci
+
+      # Two tsconfigs: the app and the Vite/node-side config. `npm run typecheck` runs both. Kept as its
+      # own step ahead of the build so a type error reports as a type error rather than as a build
+      # failure twenty lines into a bundler log.
+      - name: TypeScript (tsc --noEmit, both projects)
+        working-directory: pwa
+        run: npm run typecheck
+
+      - name: ESLint
+        working-directory: pwa
+        run: npm run lint
+
+      - name: Build
+        working-directory: pwa
+        # `npm run build` re-runs typecheck first (see package.json). That is one redundant tsc pass and
+        # it is left alone: making the build depend on the check is what stops a broken type from
+        # reaching dist/ when someone runs the build locally without CI.
+        run: npm run build
+
+      # -----------------------------------------------------------------------------------------------
+      # Bundle audit. Four assertions, each about something that must not exist in a browser artifact.
+      #
+      # These greps deliberately look at dist/ INCLUDING sourcemaps. The .map files carry the original
+      # TypeScript, so a secret in a comment ships to production just as literally as one in a string.
+      # -----------------------------------------------------------------------------------------------
+      - name: Audit the built bundle
+        working-directory: pwa
+        run: |
+          set -uo pipefail
+          fail=0
+
+          if [ ! -d dist ]; then
+            echo "::error title=No dist/::the build produced no output directory; nothing to audit"
+            exit 1
+          fi
+          echo "auditing $(find dist -type f | wc -l) files in dist/"
+
+          # --- 1. R-07: the action vocabulary is closed. -----------------------------------------------
+          # continue | verify | hold | escalate. `approve`/`deny` do not exist, and a client that can
+          # render them is a client that can be asked to send them. This is the browser-side half of
+          # contract_test.sh's T-07, which checks the served OpenAPI document.
+          #
+          # Word-boundary quoted-string match only: a substring match would fire on "approved_by" or on
+          # a minified variable named `deny`, and a check that cries wolf is a check that gets deleted.
+          if grep -rEn "['\"](approve|deny)['\"]" dist --include='*.js' --include='*.map' >/tmp/pwa-action-hits 2>/dev/null; then
+            echo "::error title=Forbidden action vocabulary in the bundle::The client contains an 'approve' or 'deny' action value. The vocabulary is closed to continue|verify|hold|escalate (rules.md R-07): a direct approve/deny is an irreversible side effect this system must not be able to express, and a UI that can render it will eventually send it."
+            cat /tmp/pwa-action-hits
+            fail=1
+          else
+            echo "  ok  no approve/deny action value in the bundle (R-07)"
+          fi
+
+          # --- 2. R-34: no secrets in the client. ----------------------------------------------------
+          # A bundled secret is not "exposed if someone looks" — it is published. Patterns kept narrow
+          # and specific for the same cry-wolf reason as above. secret-scan.yml owns the repository-wide
+          # version of this; here the target is what survived bundling.
+          if grep -rEn 'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.' dist >/tmp/pwa-secret-hits 2>/dev/null; then
+            echo "::error title=Secret material in the bundle::An AWS key id, a PEM private key, or a JWT was found in dist/. rules.md R-34: nothing secret exists in the client. Note that dist/ includes sourcemaps, so a value in a comment ships too."
+            # Truncated: never echo the matched secret in full into a log the whole org can read.
+            cut -c1-120 /tmp/pwa-secret-hits
+            fail=1
+          else
+            echo "  ok  no AWS key / PEM / JWT in the bundle (R-34)"
+          fi
+
+          # --- 3. R-34 again: no real AWS account identifiers. ---------------------------------------
+          # A 12-digit account id in a bundle is not a credential, but it is reconnaissance, and every
+          # document in this repository is required to use obviously-fake placeholders. Matched only in
+          # an ARN or ECR-host shape, because a bare 12-digit number is a timestamp about as often as it
+          # is an account.
+          if grep -rEn 'arn:aws:[a-z0-9-]*:[a-z0-9-]*:[0-9]{12}:|[0-9]{12}\.dkr\.ecr\.' dist >/tmp/pwa-acct-hits 2>/dev/null; then
+            echo "::error title=AWS account identifier in the bundle::An ARN or ECR registry host with a 12-digit account id reached dist/ (rules.md R-34)."
+            cut -c1-120 /tmp/pwa-acct-hits
+            fail=1
+          else
+            echo "  ok  no AWS ARN/registry host with an account id in the bundle (R-34)"
+          fi
+
+          # --- 4. R-01: the bundle must not register a service worker. -------------------------------
+          # There is no offline shell and no worker in this codebase (see src/main.tsx). If one appears,
+          # it is a standing hazard to the guarantees that matter most here: a caching worker can persist
+          # audio buffers and session identifiers in the browser's cache storage, which is exactly the
+          # at-rest surface R-14 and R-16 exist to keep empty. It would also let the app claim offline
+          # capability it does not have.
+          if grep -rEn 'serviceWorker\.register|navigator\.serviceWorker\.register' dist --include='*.js' >/tmp/pwa-sw-hits 2>/dev/null; then
+            echo "::error title=Service worker registration in the bundle::Nothing in this codebase should register a service worker. A caching worker can persist audio and session identifiers in the browser (rules.md R-14, R-16), and an app with no offline shell must not advertise one (R-01). If a worker is genuinely wanted, it needs a design decision and a cache policy, not a bundler default."
+            cat /tmp/pwa-sw-hits
+            fail=1
+          else
+            echo "  ok  no service worker registration (R-01, R-14, R-16)"
+          fi
+
+          exit "$fail"
+
+      # Kept for 7 days rather than 90: this is a build artifact for inspecting a specific run, not a
+      # release store. The release store is ECR for images and the release manifest for everything else
+      # (rules.md R-51).
+      - uses: actions/upload-artifact@v4.4.3
+        # `always()` is wrong here — a bundle that failed the audit should not be conveniently
+        # downloadable as if it were shippable. On success only.
+        with:
+          name: pwa-dist-${{ github.sha }}
+          path: pwa/dist
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish instructions (not automated — see the header comment)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          {
+            echo "### pwa built — not published"
+            echo
+            echo "Artifact \`pwa-dist-${{ github.sha }}\` is attached to this run."
+            echo
+            echo "Publishing is manual, by an operator whose credentials can write the site bucket."
+            echo "\`gh-actions-deploy-role\` intentionally cannot (aws-setup-instructions.md section 3.3):"
+            echo
+            echo '```bash'
+            echo 'BUCKET=$(aws cloudformation describe-stacks --stack-name EdgeStack \'
+            echo '  --region ap-south-1 --query "Stacks[0].Outputs[?OutputKey==\`PwaBucketName\`].OutputValue" --output text)'
+            echo 'aws s3 sync ./dist "s3://$BUCKET/" --delete --region ap-south-1'
+            echo 'aws cloudfront create-invalidation --distribution-id "$CF_DIST_ID" --paths "/*"'
+            echo '```'
+            echo
+            echo "> Uploading a bundle changes what operators load. It does **not** start GPU spend"
+            echo "> (rules.md R-29) — that is \`deploy-runtime.yml\` and nothing else."
+          } >> "$GITHUB_STEP_SUMMARY"

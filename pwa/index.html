@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+    <!--
+      Declared so the user agent paints its own canvas in the right scheme before any stylesheet has
+      parsed. `tokens.css` sets `color-scheme: dark` on `:root` with a `prefers-color-scheme: light`
+      override; without this meta the first frame is the UA's default white, which is a flash of the
+      one colour the palette does not contain. No hex is hardcoded here on purpose — the colours are
+      the design system's to own.
+    -->
+    <meta name="color-scheme" content="dark light" />
+
+    <!--
+      Nothing about a session may leak sideways. `lib/api.ts` already sets `referrerPolicy: 'no-referrer'`
+      per request; this covers the document itself, including any future outbound link (rules.md R-16).
+    -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <meta
+      name="description"
+      content="Operator console for the Voice Integrity Control Plane. Streams call audio for synthetic-speech artifact scoring and shows the resulting control step. No raw audio is retained."
+    />
+
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <title>Voice Integrity Control Plane</title>
+
+    <!--
+      No <link> to a font CDN, no <script src> to a CDN, no inline <style>. The demo has to build and
+      run with the network unplugged (rules.md R-01: a target is not met until it is met offline too),
+      and the font stacks in `tokens.css` are system stacks for exactly this reason.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <p>
+        This console needs JavaScript. It captures microphone audio in the browser and streams it over
+        a WebSocket, neither of which has a server-rendered equivalent.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sih26104.local/schemas/datasets/manifest/1-0-0",
+  "title": "Dataset manifest (SIH26104 / PS104)",
+
+  "description": "The versioned record of every audio file used to train, calibrate, or evaluate the detector. Normative for column names and types in ALL serialisations: the playbook (PS104_AI_Training_and_Evaluation_Playbook.md 2.1) stores the manifest as manifest.parquet or manifest.csv, and the writer for those formats must derive its header from this schema rather than from a separate list. JSON is the validation form because a schema can be enforced on it in CI.\n\nTHERE IS NO AUDIO PATH FIELD, AND THAT IS THE POINT. Section 2.1 keeps the raw recording path in controlled research storage; audit and deployment data never receive it. Resolution from sample_id to a local file is done by a side-car map that is NOT in version control and is NOT validated by this schema, so a manifest can be committed, reviewed, and shipped without ever carrying a pointer to a waveform (rules.md R-14, R-15). The property set is closed (additionalProperties: false) at every level, so adding audio_path, waveform_uri, pcm_blob, transcript, or embedding is a schema change with a reviewer attached, not a convenience.\n\nThe grouping block is the reason this schema exists rather than a README convention. See $defs.grouping.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "manifest_id", "created_at", "records"],
+
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0",
+      "description": "Pinned. A manifest that does not declare the schema version it was written against cannot be validated years later, when the schema has moved and the manifest has not."
+    },
+    "manifest_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+      "description": "Stable identifier for THIS manifest, cited by every calibration artifact, model card, and evaluation report produced from it. calibration.json's fit.manifest_sha256 pairs a fitted mapping with the exact manifest it was fitted on; without that pair, a reported number cannot be reproduced."
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pinned_revisions"],
+      "description": "Upstream corpora move. MLAAD and IndicVoices are both explicitly required to be pinned to an exact release (playbook 2), because 'we used MLAAD' does not identify a dataset.",
+      "properties": {
+        "pinned_revisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_dataset", "revision", "source_license"],
+            "properties": {
+              "source_dataset": { "$ref": "#/$defs/identifier" },
+              "revision": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "source_license": { "$ref": "#/$defs/identifier" },
+              "access_terms_accepted_by": {
+                "type": "string",
+                "description": "A person, not a team. IndicVoices access terms are accepted by somebody, and licence compliance with no named acceptor is nobody's job."
+              }
+            }
+          }
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$",
+      "description": "A slug, not free text. Bounded so a note, a stack trace, or a person's name cannot be parked in one."
+    },
+
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "64 lowercase hex, the same shape the audit table's CHECK constraints enforce."
+    },
+
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One audio file, once. The closed property set is a privacy control: every field here was reviewed, and there is no place to attach an unreviewed one.",
+      "required": [
+        "sample_id",
+        "split",
+        "label",
+        "source_dataset",
+        "source_license",
+        "speaker_id_hash",
+        "language",
+        "script",
+        "accent_region",
+        "accent_region_source",
+        "generator_family",
+        "generator_version",
+        "attack_type",
+        "capture_device",
+        "codec",
+        "sample_rate_hz",
+        "channel_condition",
+        "duration_ms",
+        "sha256_audio",
+        "consent_basis",
+        "retention_expiry",
+        "derived_from_sample_id",
+        "grouping"
+      ],
+      "properties": {
+        "sample_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$",
+          "description": "Stable, immutable key. Immutable matters: it is cited by the consent ledger, by every split assignment, and by derived_from_sample_id on augmented children."
+        },
+        "split": {
+          "enum": [
+            "train",
+            "dev_calibration",
+            "eval_locked",
+            "eval_generator_heldout",
+            "eval_codec_language_heldout",
+            "demo"
+          ],
+          "description": "Playbook 2.2. Enumerated so a typo cannot invent a split: 'eval-locked' silently becoming an unrecognised value is how a locked hold-out leaks into tuning without anyone editing a line of splitting code. dev_calibration is the ONLY split a calibrator or a threshold may be fitted on (rules.md R-37); eval_locked is opened once, for the final report, per candidate release."
+        },
+        "label": {
+          "enum": ["bonafide", "spoof"],
+          "description": "Training target ONLY. Never rendered to a user and never written to the audit table: the deployed system reports a risk score and a proportionate action, not a verdict (rules.md R-07)."
+        },
+        "source_dataset": { "$ref": "#/$defs/identifier" },
+        "source_license": {
+          "$ref": "#/$defs/identifier",
+          "description": "Per record, not per manifest. A mixed manifest under one declared licence is a compliance claim nobody can substantiate."
+        },
+        "speaker_id_hash": {
+          "$ref": "#/$defs/sha256",
+          "description": "Namespace-salted SHA-256 of the upstream speaker identifier. A hash, so speaker-disjoint splitting is possible without the manifest holding an identity; salted with a project namespace, so the same speaker cannot be re-identified by hashing a guessed id from another corpus."
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+          "description": "BCP 47, e.g. hi, bn, en-IN. Required for the codec-language cohort report; a manifest without it cannot answer 'does this work in Bengali on a mid-range Android'."
+        },
+        "script": {
+          "type": "string",
+          "pattern": "^[A-Z][a-z]{3}$",
+          "description": "ISO 15924 four-letter code: Deva, Beng, Latn, Taml. A code rather than a name ('Devanagari') because two spellings of one script split a cohort in half and halve its apparent sample count."
+        },
+        "accent_region": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$",
+          "description": "Controlled vocabulary or the literal 'unknown'. Used for bias analysis, which is the one thing it is for."
+        },
+        "accent_region_source": {
+          "enum": ["self_reported", "dataset_metadata", "unknown"],
+          "description": "NEVER INFERRED FROM AUDIO (playbook 2.1). The enum deliberately has no value for it: a pipeline that classified accent from the waveform could not describe what it did and still validate. Inferring a speaker's region from their voice and then using it for bias analysis measures the inference, not the bias, and it builds a demographic classifier nobody asked for."
+        },
+        "generator_family": {
+          "$ref": "#/$defs/identifier",
+          "description": "VITS, YourTTS, xtts, none. 'none' for bona fide speech — explicit, never blank, because a blank is indistinguishable from a field the pipeline forgot to fill."
+        },
+        "generator_version": {
+          "$ref": "#/$defs/identifier",
+          "description": "Family alone is not enough for a generator-disjoint split: two versions of one family can be as different as two families, and holding out only the family lets a version leak."
+        },
+        "attack_type": {
+          "enum": ["none", "tts", "vc", "replay", "codec_transcoded"],
+          "description": "Failure analysis. Reporting one pooled EER across attack types hides which attack the detector cannot see."
+        },
+        "capture_device": { "$ref": "#/$defs/identifier" },
+        "codec": {
+          "$ref": "#/$defs/identifier",
+          "description": "The FULL chain as one token where it matters, e.g. opus_24k_then_g711. A codec column that records only the last transcode cannot explain a cohort's degradation."
+        },
+        "sample_rate_hz": {
+          "type": "integer",
+          "enum": [8000, 16000, 22050, 24000, 32000, 44100, 48000],
+          "description": "The deployed pipeline is 16 kHz mono. Everything else must be resampled with the recipe recorded, and an 8 kHz telephony sample upsampled to 16 kHz is NOT the same as native 16 kHz — the manifest has to keep the distinction so the cohort report can too."
+        },
+        "channel_condition": {
+          "enum": ["clean", "voip", "speakerphone", "noise", "unknown"],
+          "description": "Robustness stratification. 'unknown' is permitted and is not the same as 'clean'; treating unlabelled data as clean is how a robustness claim gets made about data nobody characterised."
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000,
+          "description": "Deduplication and eligibility. A sample shorter than the model's input window cannot produce an eligible window at all, and counting it in a split's size overstates the evidence."
+        },
+        "sha256_audio": {
+          "$ref": "#/$defs/sha256",
+          "description": "Content hash of the audio bytes. Two purposes: cross-split duplicate detection (the same file under two sample_ids in train and eval_locked is the most direct possible leak), and reproducibility of a reported number. It is a hash, not a path — it identifies the content without locating it."
+        },
+        "consent_basis": {
+          "enum": [
+            "research-consent-v1",
+            "public-corpus-license-only",
+            "team-member-consent-v1",
+            "synthetic-derived-from-consented-parent"
+          ],
+          "description": "Mandatory on EVERY record, not only local data. A public corpus carries public-corpus-license-only, which is an explicit statement that the legal basis is the licence and there is no individual consent — different from an empty field, which is an absence of information. Anything else must have a matching record in datasets/consent_ledger/."
+        },
+        "retention_expiry": {
+          "type": ["string", "null"],
+          "format": "date",
+          "description": "The date after which this sample must not be retained. Null is permitted ONLY with public-corpus-license-only (enforced by the if/then below), because a corpus governed by a licence has no consent clock to expire. For every other basis a date is mandatory: consent without an expiry is indefinite consent, which is not what anyone signs."
+        },
+        "derived_from_sample_id": {
+          "type": ["string", "null"],
+          "description": "The IMMEDIATE parent for an augmented sample; null for an original. Immediate, so the chain is reconstructible — and NOT the field to group a split on. See grouping.root_sample_id for why."
+        },
+        "grouping": { "$ref": "#/$defs/grouping" },
+        "notes": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Bounded free text for dataset provenance oddities. Bounded because an unbounded note field on a per-speaker record becomes a place someone writes a name."
+        }
+      },
+
+      "allOf": [
+        {
+          "$comment": "An augmented sample must declare a depth of at least 1. A child that claims depth 0 would be grouped as its own root and could land in a different split from its parent.",
+          "if": {
+            "properties": { "derived_from_sample_id": { "type": "string" } },
+            "required": ["derived_from_sample_id"]
+          },
+          "then": {
+            "properties": { "grouping": { "properties": { "augmentation_depth": { "minimum": 1 } } } }
+          }
+        },
+        {
+          "$comment": "And the converse: depth 0 means there is no parent. Without this, a record could declare depth 0 while naming a parent, which reads as 'grouped as an original' and 'derived from something' at the same time.",
+          "if": {
+            "properties": { "grouping": { "properties": { "augmentation_depth": { "const": 0 } } } }
+          },
+          "then": { "properties": { "derived_from_sample_id": { "type": "null" } } }
+        },
+        {
+          "$comment": "Only a licence-governed public corpus may omit a retention date.",
+          "if": {
+            "properties": { "retention_expiry": { "type": "null" } },
+            "required": ["retention_expiry"]
+          },
+          "then": { "properties": { "consent_basis": { "const": "public-corpus-license-only" } } }
+        },
+        {
+          "$comment": "Bona fide speech is never labelled as generated. Playbook 2: never label natural speech itself as spoof.",
+          "if": { "properties": { "label": { "const": "bonafide" } }, "required": ["label"] },
+          "then": {
+            "properties": {
+              "generator_family": { "const": "none" },
+              "generator_version": { "const": "none" },
+              "attack_type": { "const": "none" }
+            }
+          }
+        },
+        {
+          "$comment": "A spoof sample with no named generator cannot be held out by generator, which makes the future-TTS split unenforceable for it.",
+          "if": { "properties": { "label": { "const": "spoof" } }, "required": ["label"] },
+          "then": {
+            "properties": {
+              "generator_family": { "not": { "const": "none" } },
+              "attack_type": { "not": { "const": "none" } }
+            }
+          }
+        }
+      ]
+    },
+
+    "grouping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grouped_before_augmentation",
+        "group_by",
+        "root_sample_id",
+        "generator_group_id",
+        "augmentation_depth",
+        "grouping_key_sha256"
+      ],
+      "description": "THE SPLIT GROUPING, STATED PER RECORD RATHER THAN ASSUMED.\n\nPlaybook 2.2 requires grouping BEFORE any augmentation, disjoint by speaker, parent sample, session, and generator family/version. That requirement is normally satisfied by a splitting script and documented in prose, which means the manifest carries no evidence that it was honoured — and a manifest that was grouped wrongly looks exactly like one that was grouped correctly. This block is what makes the difference visible: every record states which keys it was grouped on and the composite key it landed in, so the disjointness claim is checkable from the manifest alone by scripts/validate_manifest.py.\n\nThe leak this prevents, concretely: augment first, split second, and a speaker's clean sample lands in train while its noise-augmented child lands in eval_locked. Every reported number is then measured on data the model trained on, the split protocol was followed to the letter, and the result is meaningless.",
+      "properties": {
+        "grouped_before_augmentation": {
+          "const": true,
+          "description": "A const, not a boolean. There is no valid manifest in which this is false, so the schema does not offer the option — a pipeline that augmented before grouping cannot produce a valid manifest and describe itself honestly at the same time. This is a declaration and not a proof; the proof is grouping_key_sha256 being disjoint across splits, which is a cross-record check and therefore the validator's job."
+        },
+        "group_by": {
+          "type": "array",
+          "description": "The exact keys the splitter grouped on, pinned as a const so a splitter that grouped on speaker alone produces an invalid manifest. Listing them makes the grouping explicit rather than implied: a reader of one record can see what disjointness was enforced without reading the splitting code.",
+          "const": ["speaker_id_hash", "root_sample_id", "generator_group_id"]
+        },
+        "root_sample_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$",
+          "description": "The ROOT of the derivation chain — not derived_from_sample_id. For an original, this equals sample_id.\n\nThe distinction is the whole point. In a chain A -> B -> C, grouping on the immediate parent puts B in A's group and C in B's group, so A and C are in DIFFERENT groups and may be split apart. Grouping on the root keeps all three together. Two-step augmentation (resample, then codec) is routine, so this is not a hypothetical."
+        },
+        "generator_group_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]{2,127}$",
+          "description": "family:version for spoof, the literal 'bonafide' for genuine speech. Family alone would let a held-out version leak; a null would drop bona fide records out of the grouping entirely and let a speaker's genuine audio cross the split their spoofed audio was held out of."
+        },
+        "augmentation_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8,
+          "description": "0 for an original. Bounded: a depth beyond a handful means the chain to the root is long enough that a single broken link somewhere in it has silently changed which group the sample belongs to."
+        },
+        "grouping_key_sha256": {
+          "$ref": "#/$defs/sha256",
+          "description": "sha256 of the three group_by values joined by 0x1f (unit separator), in group_by order. The composite group this record belongs to, precomputed so disjointness is a GROUP BY over one column instead of a re-derivation nobody re-runs.\n\nTHE INVARIANT scripts/validate_manifest.py MUST CHECK: no grouping_key_sha256 value may appear under more than one split. That single check is the split protocol. A separator that cannot occur inside any of the three values is used so that ('a', 'bc') and ('ab', 'c') cannot collide into one key."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,188 @@
+{
+  "schema_version": "1.0.0",
+  "manifest_id": "example-manifest-not-for-training",
+  "created_at": "2026-01-01T00:00:00Z",
+
+  "source_snapshot": {
+    "pinned_revisions": [
+      {
+        "source_dataset": "EXAMPLE_CORPUS",
+        "revision": "v0.0.0-example",
+        "source_license": "EXAMPLE-LICENSE-NOT-REAL",
+        "access_terms_accepted_by": "TODO — a named person, before any real corpus is added"
+      }
+    ]
+  },
+
+  "records": [
+    {
+      "sample_id": "example-bonafide-original-0001",
+      "split": "train",
+      "label": "bonafide",
+      "source_dataset": "EXAMPLE_CORPUS",
+      "source_license": "EXAMPLE-LICENSE-NOT-REAL",
+      "speaker_id_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+      "language": "hi",
+      "script": "Deva",
+      "accent_region": "unknown",
+      "accent_region_source": "unknown",
+      "generator_family": "none",
+      "generator_version": "none",
+      "attack_type": "none",
+      "capture_device": "example-handset",
+      "codec": "pcm16",
+      "sample_rate_hz": 16000,
+      "channel_condition": "clean",
+      "duration_ms": 4200,
+      "sha256_audio": "00000000000000000000000000000000000000000000000000000000000000aa",
+      "consent_basis": "public-corpus-license-only",
+      "retention_expiry": null,
+      "derived_from_sample_id": null,
+      "grouping": {
+        "grouped_before_augmentation": true,
+        "group_by": ["speaker_id_hash", "root_sample_id", "generator_group_id"],
+        "root_sample_id": "example-bonafide-original-0001",
+        "generator_group_id": "bonafide",
+        "augmentation_depth": 0,
+        "grouping_key_sha256": "d33079653bda1a1aacebc5e78025fbbec8aed2dccf5db4b18eb6a0016f7c041a"
+      },
+      "notes": "An ORIGINAL: augmentation_depth 0, derived_from_sample_id null, root_sample_id == sample_id."
+    },
+
+    {
+      "sample_id": "example-bonafide-augmented-0001-opus",
+      "split": "train",
+      "label": "bonafide",
+      "source_dataset": "EXAMPLE_CORPUS",
+      "source_license": "EXAMPLE-LICENSE-NOT-REAL",
+      "speaker_id_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+      "language": "hi",
+      "script": "Deva",
+      "accent_region": "unknown",
+      "accent_region_source": "unknown",
+      "generator_family": "none",
+      "generator_version": "none",
+      "attack_type": "none",
+      "capture_device": "example-handset",
+      "codec": "opus_24k",
+      "sample_rate_hz": 16000,
+      "channel_condition": "voip",
+      "duration_ms": 4200,
+      "sha256_audio": "00000000000000000000000000000000000000000000000000000000000000ab",
+      "consent_basis": "public-corpus-license-only",
+      "retention_expiry": null,
+      "derived_from_sample_id": "example-bonafide-original-0001",
+      "grouping": {
+        "grouped_before_augmentation": true,
+        "group_by": ["speaker_id_hash", "root_sample_id", "generator_group_id"],
+        "root_sample_id": "example-bonafide-original-0001",
+        "generator_group_id": "bonafide",
+        "augmentation_depth": 1,
+        "grouping_key_sha256": "d33079653bda1a1aacebc5e78025fbbec8aed2dccf5db4b18eb6a0016f7c041a"
+      },
+      "notes": "DEPTH 1. Same grouping_key_sha256 as its parent, so the splitter cannot separate them. This is the leak the grouping block exists to prevent."
+    },
+
+    {
+      "sample_id": "example-bonafide-augmented-0001-opus-g711",
+      "split": "train",
+      "label": "bonafide",
+      "source_dataset": "EXAMPLE_CORPUS",
+      "source_license": "EXAMPLE-LICENSE-NOT-REAL",
+      "speaker_id_hash": "0000000000000000000000000000000000000000000000000000000000000001",
+      "language": "hi",
+      "script": "Deva",
+      "accent_region": "unknown",
+      "accent_region_source": "unknown",
+      "generator_family": "none",
+      "generator_version": "none",
+      "attack_type": "none",
+      "capture_device": "example-handset",
+      "codec": "opus_24k_then_g711",
+      "sample_rate_hz": 8000,
+      "channel_condition": "voip",
+      "duration_ms": 4200,
+      "sha256_audio": "00000000000000000000000000000000000000000000000000000000000000ac",
+      "consent_basis": "public-corpus-license-only",
+      "retention_expiry": null,
+      "derived_from_sample_id": "example-bonafide-augmented-0001-opus",
+      "grouping": {
+        "grouped_before_augmentation": true,
+        "group_by": ["speaker_id_hash", "root_sample_id", "generator_group_id"],
+        "root_sample_id": "example-bonafide-original-0001",
+        "generator_group_id": "bonafide",
+        "augmentation_depth": 2,
+        "grouping_key_sha256": "d33079653bda1a1aacebc5e78025fbbec8aed2dccf5db4b18eb6a0016f7c041a"
+      },
+      "notes": "DEPTH 2, AND THE WHOLE ARGUMENT. Its immediate parent is the depth-1 record, but root_sample_id still points at the depth-0 original. Grouping on the immediate parent would let this record be split away from that original; grouping on the root cannot."
+    },
+
+    {
+      "sample_id": "example-spoof-vits-0001",
+      "split": "dev_calibration",
+      "label": "spoof",
+      "source_dataset": "EXAMPLE_CORPUS",
+      "source_license": "EXAMPLE-LICENSE-NOT-REAL",
+      "speaker_id_hash": "0000000000000000000000000000000000000000000000000000000000000002",
+      "language": "bn",
+      "script": "Beng",
+      "accent_region": "unknown",
+      "accent_region_source": "dataset_metadata",
+      "generator_family": "example-tts-family",
+      "generator_version": "0.0.0-example",
+      "attack_type": "tts",
+      "capture_device": "synthetic",
+      "codec": "pcm16",
+      "sample_rate_hz": 22050,
+      "channel_condition": "clean",
+      "duration_ms": 3800,
+      "sha256_audio": "00000000000000000000000000000000000000000000000000000000000000ad",
+      "consent_basis": "synthetic-derived-from-consented-parent",
+      "retention_expiry": "2027-01-01",
+      "derived_from_sample_id": null,
+      "grouping": {
+        "grouped_before_augmentation": true,
+        "group_by": ["speaker_id_hash", "root_sample_id", "generator_group_id"],
+        "root_sample_id": "example-spoof-vits-0001",
+        "generator_group_id": "example-tts-family:0.0.0-example",
+        "augmentation_depth": 0,
+        "grouping_key_sha256": "820f300b91c8f3dd7655e647f7e121242ce908464bc0b879d39d29758435b7e7"
+      },
+      "notes": "generator_group_id carries family:version, so holding out a version is possible. consent_basis is not public-corpus-license-only, so retention_expiry is mandatory AND a matching consent ledger record is required."
+    },
+
+    {
+      "sample_id": "example-demo-consented-0001",
+      "split": "demo",
+      "label": "bonafide",
+      "source_dataset": "TEAM_RECORDED",
+      "source_license": "TEAM-INTERNAL",
+      "speaker_id_hash": "0000000000000000000000000000000000000000000000000000000000000003",
+      "language": "en-IN",
+      "script": "Latn",
+      "accent_region": "unknown",
+      "accent_region_source": "self_reported",
+      "generator_family": "none",
+      "generator_version": "none",
+      "attack_type": "none",
+      "capture_device": "example-midrange-android",
+      "codec": "opus_24k",
+      "sample_rate_hz": 16000,
+      "channel_condition": "speakerphone",
+      "duration_ms": 9100,
+      "sha256_audio": "00000000000000000000000000000000000000000000000000000000000000ae",
+      "consent_basis": "team-member-consent-v1",
+      "retention_expiry": "2026-12-31",
+      "derived_from_sample_id": null,
+      "grouping": {
+        "grouped_before_augmentation": true,
+        "group_by": ["speaker_id_hash", "root_sample_id", "generator_group_id"],
+        "root_sample_id": "example-demo-consented-0001",
+        "generator_group_id": "bonafide",
+        "augmentation_depth": 0,
+        "grouping_key_sha256": "f6e4ae5322d5abdeaf9c146754da3fddf77191bce2cc29a6f1d1e44a4112aa84"
+      },
+      "notes": "The demo split is separate consented sessions and separate speakers (playbook 2.2). This speaker_id_hash appears in no other split, which is why its grouping key does not appear elsewhere in this file."
+    }
+  ]
+}

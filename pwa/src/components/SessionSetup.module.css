@@ -1,0 +1,80 @@
+/* SessionSetup — the pre-capture binding form.
+ *
+ * Element-level input styling (border, radius, 44px target, 16px floor) already comes from
+ * `global.css`. This file only lays out and labels.
+ */
+
+.form {
+  display: grid;
+  gap: var(--vi-space-5);
+  max-inline-size: var(--vi-content-max);
+  margin-inline: auto;
+  padding: var(--vi-space-6);
+  background-color: var(--vi-surface);
+  border: var(--vi-border-width) solid var(--vi-border);
+  border-radius: var(--vi-radius-lg);
+  box-shadow: var(--vi-shadow-md);
+}
+
+.heading {
+  color: var(--vi-text);
+}
+
+.lede {
+  color: var(--vi-text-muted);
+  line-height: var(--vi-leading-relaxed);
+}
+
+.field {
+  display: grid;
+  gap: var(--vi-space-2);
+}
+
+.label {
+  font-size: var(--vi-text-sm);
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text);
+  text-transform: uppercase;
+  letter-spacing: var(--vi-tracking-wide);
+}
+
+.hint {
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-muted);
+  line-height: var(--vi-leading-normal);
+}
+
+/* A field-level problem and a request-level error use the same treatment because they are the same
+ * thing to the operator: something must change before this can proceed. Neither uses a verdict colour
+ * — a red field would be the only red in the app and would read as a risk signal. */
+.problem,
+.error {
+  padding: var(--vi-space-2) var(--vi-space-3);
+  font-size: var(--vi-text-sm);
+  color: var(--vi-state-uncertain-fg);
+  background-color: var(--vi-state-uncertain-bg);
+  border-inline-start: var(--vi-rail-w) solid var(--vi-state-uncertain-border);
+  border-radius: var(--vi-radius-sm);
+}
+
+.submit {
+  min-block-size: var(--vi-touch-min);
+  padding: var(--vi-space-3) var(--vi-space-5);
+  font-size: var(--vi-text-lg);
+  font-weight: var(--vi-weight-semibold);
+  color: var(--vi-text-inverse);
+  background-color: var(--vi-accent);
+  border: var(--vi-border-width-strong) solid var(--vi-accent);
+  border-radius: var(--vi-radius-md);
+  text-align: center;
+}
+
+.submit:disabled {
+  /* Dimming only. The label also changes, so the disabled state is never carried by opacity alone. */
+  opacity: var(--vi-stale-opacity);
+}
+
+.footnote {
+  font-size: var(--vi-text-sm);
+  color: var(--vi-text-muted);
+}
