@@ -2,7 +2,7 @@
 
 **Recorded Date:** 2026-08-27  
 **Region:** `ap-south-1` (Mumbai)  
-**Caller Identity:** `arn:aws:iam::075213340955:root` (Redacted Account: `***-***-0955`)  
+**Caller Identity:** `arn:aws:iam::<ACCOUNT_ID>:root` (Redacted Account: `***-***-0955`)  
 **Sign-off:** Pair A (Platform/Infra)
 
 ---
@@ -11,7 +11,7 @@
 
 | Field | Value | Verification Source |
 |---|---|---|
-| **Account ID** | `075213340955` (`***-***-0955`) | `aws sts get-caller-identity` |
+| **Account ID** | `***-***-0955` (Redacted per R-34) | `aws sts get-caller-identity` |
 | **Initial Cost Baseline** | `$0.0000001908 USD` (~$0.00) | `aws ce get-cost-and-usage` (Start: 2026-08-01, End: 2026-08-27) |
 | **Plan Type** | Active AWS Root / Identity Center Account | AWS Management Console |
 | **Region Scope** | `ap-south-1` (Workload) / `us-east-1` (Control Plane) | Architecture Invariant R-27 |
