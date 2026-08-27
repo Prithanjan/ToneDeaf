@@ -1598,9 +1598,11 @@ and finding that the highest-value defects live in what a control does not ask.*
   - Fixed `secret-scan.yml` S-02 self-test rule coverage: changed placeholder check to inspect captured secret values rather than keyword lines, preserving 10/10 planted rule detection and 0 false positives across 195 repo files.
   - Fixed `gateway/pyproject.toml` to exclude generated protobuf stubs (`app/scorer/voice_scorer_pb2*.py`) from Ruff linting and fixed `UP038` union type syntax in `gateway/app/security/jwt.py`.
   - Fixed CI unit test exit code 126 by invoking shell scripts via `bash ./scripts/*.sh` and applying `chmod +x` permissions in git index.
-  - Added missing `grpcio-tools==1.68.1` to `gateway/requirements-dev.txt` and synchronized protobuf relative imports (`from . import voice_scorer_pb2`) for drift-free stub generation in `gateway-ci.yml`.
-  - Fixed `contract-check.yml` (C-01..C-05) path resolution and schema wording; verified all static contract checks pass.
-  - Fixed `ruff` formatting and `mypy` strict typing overrides across `gateway` and `scorer`; 100% clean.
+- **Configured Agent Toolkit for AWS & Modern Infrastructure Runbook**:
+  - Installed AWS CLI v2 (`aws-cli/2.36.32`) on Windows development workstation.
+  - Initialized Agent Toolkit for AWS (`aws configure agent-toolkit --yes --region us-east-1`) and configured native MCP skill integrations.
+  - Added AWS Agent rules (`docs/aws/aws-agent-rules.md`, `docs/aws/aws-starter-rules.md`) and project entrypoints (`AGENTS.md`, `CLAUDE.md`).
+  - Updated `aws-setup-instructions.md` with complete dual-syntax cross-platform commands (Windows PowerShell & Linux/macOS Bash) and aligned the runbook to the verified Phase 1 CDK architecture (`infra/cdk/lib/`).
 
 ---
 

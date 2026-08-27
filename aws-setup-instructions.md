@@ -22,42 +22,144 @@ dependencies.
 
 ---
 
-## 0. Prerequisites
+## 0. Prerequisites & Tooling Setup
 
-### 0.1 Local tooling
+### 0.1 Local Tooling (Cross-Platform)
 
-```bash
-# AWS CLI v2 (not present on this workstation — install it)
-# Windows: https://awscli.amazonaws.com/AWSCLIV2.msi
-aws --version    # expect aws-cli/2.x
+Ensure core CLI tools are installed on your development workstation:
 
-# GitHub CLI (not present on this workstation — install it)
-# Windows: winget install --id GitHub.cli
+#### Windows (PowerShell)
+```powershell
+# 1. AWS CLI v2 (installed at C:\Users\KIIT\AppData\Local\Programs\Amazon\AWSCLIV2\aws.exe)
+irm 'https://awscli.amazonaws.com/v2/install.ps1' | iex
+aws --version    # expect aws-cli/2.36.x or newer
+
+# 2. GitHub CLI
+winget install --id GitHub.cli
 gh --version
 
-# Node 20+ for CDK (workstation has v24.12 — OK)
+# 3. Node.js 20+ & AWS CDK v2
 npm install -g aws-cdk@2.266.0
 cdk --version    # expect 2.266.0
 
-# Docker (workstation has 29.5.3 — OK)
+# 4. Docker Engine / Docker Desktop
 docker buildx version
 ```
 
-### 0.2 Region discipline
+#### Linux / macOS (Bash)
+```bash
+# 1. AWS CLI v2
+curl -fsSL 'https://awscli.amazonaws.com/v2/install.sh' | bash
+aws --version    # expect aws-cli/2.x
 
-| Resource | Region | Note |
+# 2. GitHub CLI
+# Ubuntu/Debian: sudo apt install gh
+# macOS: brew install gh
+gh --version
+
+# 3. Node.js 20+ & AWS CDK v2
+npm install -g aws-cdk@2.266.0
+cdk --version    # expect 2.266.0
+
+# 4. Docker & Buildx
+docker buildx version
+```
+
+---
+
+### 0.2 Agent Toolkit for AWS Setup (AI Coding Agents & AWS MCP Server)
+
+The **Agent Toolkit for AWS** provides AI coding assistants (Antigravity, Cursor, Claude Code, Codex, Kiro) with native AWS skills, MCP tool servers, and well-architected guardrails.
+
+#### Step 1: Authenticate with AWS CLI
+```powershell
+# Windows (PowerShell)
+aws login --profile tonedeaf-dev
+# A browser window opens for authentication.
+```
+```bash
+# Linux / macOS (Bash)
+aws login --profile tonedeaf-dev
+```
+
+#### Step 2: Verify STS Caller Identity
+```powershell
+# Windows (PowerShell)
+aws sts get-caller-identity --profile tonedeaf-dev
+```
+```bash
+# Linux / macOS (Bash)
+aws sts get-caller-identity --profile tonedeaf-dev
+```
+
+#### Step 3: Initialize Agent Toolkit & Install Skills
+Run the configuration command to install agent skills and configure the AWS MCP Server connection.
+> **Note:** The Agent Toolkit control-plane service is hosted in `us-east-1`. Always pass `--region us-east-1` for agent-toolkit commands regardless of your workload deployment region.
+
+```powershell
+# Windows (PowerShell)
+aws configure agent-toolkit --yes --region us-east-1 --profile tonedeaf-dev
+```
+```bash
+# Linux / macOS (Bash)
+aws configure agent-toolkit --yes --region us-east-1 --profile tonedeaf-dev
+```
+
+#### Step 4: Verify Installed AWS Skills
+```powershell
+# List available skills in repository
+aws agent-toolkit list-available-skills --region us-east-1 --profile tonedeaf-dev
+
+# List installed skills on current workstation
+aws agent-toolkit list-installed-skills --region us-east-1 --profile tonedeaf-dev
+```
+
+#### Step 5: AI Coding Rules & MCP Server Integration
+The repository includes pre-configured rule files for AI coding agents:
+- **Project Root**: [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md)
+- **AWS Rule Definitions**: [`.aws/rules/aws-agent-rules.md`](.aws/rules/aws-agent-rules.md) (advanced experience) and [`.aws/rules/aws-starter-rules.md`](.aws/rules/aws-starter-rules.md) (starter experience)
+
+**Agent Toolkit Troubleshooting**:
+
+| Symptom | Cause | Resolution |
 |---|---|---|
-| Everything in the VPC, ECS, RDS, ECR, Secrets Manager, Cognito | `ap-south-1` | |
-| **CloudFront** | global (control plane in `us-east-1`) | Distribution config is global; the VPC origin points back into `ap-south-1` |
-| **ACM certificate for CloudFront** | **`us-east-1` only** | CloudFront cannot use an `ap-south-1` certificate. Only needed if you attach a custom domain (§9.5) |
-| **AWS Budgets** | global (`us-east-1` endpoint) | |
+| `Profile is already configured with Access Key` | Static credentials exist in `~/.aws/credentials` | Use named profile `--profile <name>` or remove static keys for browser sign-in |
+| `aws: command not found` | AWS CLI path not refreshed in shell session | Windows: Restart PowerShell or check `$env:LOCALAPPDATA\Programs\Amazon\AWSCLIV2` |
+| `Exit code 253 / interactive terminal required` | Non-interactive subshell invocation | Add `--yes` flag: `aws configure agent-toolkit --yes --region us-east-1 --profile <name>` |
+| `Unable to locate credentials / ExpiredToken` | Temporary session token expired | Re-run `aws login --profile <name>` |
+
+---
+
+### 0.3 Region Discipline & Environment Configuration
+
+| Resource Layer | Region | Architectural Rationale |
+|---|---|---|
+| **Workload Infrastructure** (VPC, ECS Fargate, ECS GPU ASG, RDS PostgreSQL, Valkey/Redis, Secrets Manager, Cognito) | `ap-south-1` (Mumbai) | Ultra-low latency voice packet processing, Indian regulatory compliance (DPDP 2023) |
+| **Edge Distribution** | Global (CloudFront) | Edge caching of static PWA assets; WebSocket reverse-proxy origin routed to `ap-south-1` |
+| **ACM TLS Certificate** | `us-east-1` (N. Virginia) | CloudFront distributions require ACM certificates provisioned in `us-east-1` |
+| **AWS Budgets & Cost Anomaly** | `us-east-1` (Global Endpoint) | Account-level billing and budget notification alarms |
+| **Agent Toolkit Control Plane** | `us-east-1` | AWS Agent Toolkit and MCP server registration endpoint |
+
+#### Configure Environment Variables
+
+```powershell
+# Windows (PowerShell)
+aws configure set region ap-south-1 --profile tonedeaf-dev
+aws configure set output json --profile tonedeaf-dev
+$env:AWS_PROFILE = "tonedeaf-dev"
+$env:AWS_REGION = "ap-south-1"
+$env:ACCOUNT_ID = (aws sts get-caller-identity --query Account --output text --profile tonedeaf-dev)
+Write-Host "Configured Account: $env:ACCOUNT_ID in $env:AWS_REGION"
+```
 
 ```bash
-aws configure set region ap-south-1
-aws configure set output json
-aws sts get-caller-identity      # record the Account ID — you need it everywhere below
-export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+# Linux / macOS (Bash)
+aws configure set region ap-south-1 --profile tonedeaf-dev
+aws configure set output json --profile tonedeaf-dev
+export AWS_PROFILE=tonedeaf-dev
 export AWS_REGION=ap-south-1
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --profile tonedeaf-dev)
+echo "Configured Account: ${ACCOUNT_ID} in ${AWS_REGION}"
 ```
 
 ---
