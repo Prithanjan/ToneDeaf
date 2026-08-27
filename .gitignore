@@ -56,6 +56,8 @@ cdk.out/
 *.cdk.staging/
 .cdk.staging/
 cdk.context.json
+infra/cdk/**/*.js
+infra/cdk/**/*.d.ts
 
 # Rendered IAM policy documents. The sources in infra/iam/ carry `<AWS_ACCOUNT_ID>` placeholders and
 # ARE committed; scripts/render_iam_policies.py substitutes them into this directory, so its contents

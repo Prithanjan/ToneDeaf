@@ -177,10 +177,9 @@ export class ComputeStack extends cdk.Stack {
 
     // ── GPU capacity ──────────────────────────────────────────────────────────────────────────────
 
-    const gpuAsg = new autoscaling.AutoScalingGroup(this, 'ScorerGpuAsg', {
-      autoScalingGroupName: GPU_ASG_NAME,
-      vpc: props.vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+    const gpuUserData = ec2.UserData.forLinux();
+
+    const gpuLaunchTemplate = new ec2.LaunchTemplate(this, 'ScorerGpuLaunchTemplate', {
       instanceType: new ec2.InstanceType('g4dn.xlarge'),
       /**
        * The GPU-flavoured ECS-optimised AMI. It ships the NVIDIA driver and the container runtime
@@ -189,6 +188,21 @@ export class ComputeStack extends cdk.Stack {
        */
       machineImage: ecs.EcsOptimizedImage.amazonLinux2(ecs.AmiHardwareType.GPU),
       securityGroup: props.scorerSecurityGroup,
+      requireImdsv2: true,
+      userData: gpuUserData,
+      role: new iam.Role(this, 'ScorerGpuInstanceRole', {
+        assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
+        managedPolicies: [
+          iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonEC2ContainerServiceforEC2Role'),
+        ],
+      }),
+    });
+
+    const gpuAsg = new autoscaling.AutoScalingGroup(this, 'ScorerGpuAsg', {
+      autoScalingGroupName: GPU_ASG_NAME,
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      launchTemplate: gpuLaunchTemplate,
       // All three zero unless deployRuntime. maxCapacity is zero too: a max above zero would let
       // anything that can call SetDesiredCapacity start an instance.
       minCapacity: gpuCapacity,
@@ -207,10 +221,6 @@ export class ComputeStack extends cdk.Stack {
        * state rather than a declared invariant.
        */
       desiredCapacity: gpuCapacity,
-      // No SSH key, ever. There is no bastion and no shell into the host (rules.md R-36); debugging
-      // is CloudWatch Logs and the Health RPC.
-      keyPair: undefined,
-      requireImdsv2: true,
     });
 
     /**

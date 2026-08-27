@@ -34,7 +34,7 @@ export class DataStack extends cdk.Stack {
 
     const parameterGroup = new rds.ParameterGroup(this, 'AuditPg', {
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_6,
+        version: rds.PostgresEngineVersion.VER_16_11,
       }),
       description: 'SIH26104 audit database parameters',
       parameters: {
@@ -54,7 +54,7 @@ export class DataStack extends cdk.Stack {
 
     this.database = new rds.DatabaseInstance(this, 'AuditDb', {
       engine: rds.DatabaseInstanceEngine.postgres({
-        version: rds.PostgresEngineVersion.VER_16_6,
+        version: rds.PostgresEngineVersion.VER_16_11,
       }),
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, ec2.InstanceSize.MICRO),
       vpc: props.vpc,
