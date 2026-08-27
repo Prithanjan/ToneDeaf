@@ -1598,12 +1598,14 @@ and finding that the highest-value defects live in what a control does not ask.*
   - Fixed `secret-scan.yml` S-02 self-test rule coverage: changed placeholder check to inspect captured secret values rather than keyword lines, preserving 10/10 planted rule detection and 0 false positives across 195 repo files.
   - Fixed `gateway/pyproject.toml` to exclude generated protobuf stubs (`app/scorer/voice_scorer_pb2*.py`) from Ruff linting and fixed `UP038` union type syntax in `gateway/app/security/jwt.py`.
   - Fixed CI unit test exit code 126 by invoking shell scripts via `bash ./scripts/*.sh` and applying `chmod +x` permissions in git index.
-- **Configured Agent Toolkit for AWS & Executed Phase 0 Setup Steps (§0–§2)**:
+- **Configured Agent Toolkit for AWS & Executed Phase 0 Setup Steps (§0–§3)**:
   - Installed AWS CLI v2 (`aws-cli/2.36.32`) on Windows development workstation.
   - Authenticated profile `tonedeaf-dev` to AWS account `075213340955` in region `ap-south-1`.
   - Initialized Agent Toolkit for AWS (`aws configure agent-toolkit --yes --region us-east-1`): installed 23 AWS skills and configured MCP servers across Claude Code, Cursor, Gemini CLI, Kiro, OpenCode, and Windsurf.
   - Recorded cost baseline (§1): `$0.0000001908 USD` (~$0.00) in [`docs/manifests/aws_account_baseline.md`](docs/manifests/aws_account_baseline.md).
   - Filed GPU Quota Request (§2): Checked EC2 G/VT quota `L-DB2E81BA` in `ap-south-1` (initially `0.0 vCPUs`), filed increase request for `4.0 vCPUs` (`g4dn.xlarge`), Request ID: `86d0ea4fb8964c8f922563395643c8d2gsE1GXvT` (`PENDING`).
+  - Created GitHub OIDC Provider (§3.1): `arn:aws:iam::075213340955:oidc-provider/token.actions.githubusercontent.com`.
+  - Created CI Deploy Role & Policies (§3.2–§3.3): Rendered IAM policies for `Prithanjan/ToneDeaf`, created `gh-actions-deploy-role` (`arn:aws:iam::075213340955:role/gh-actions-deploy-role`), and attached least-privilege inline policy `sih26104-deploy`.
 
 ---
 
