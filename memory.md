@@ -1931,3 +1931,18 @@ For a cold pickup. Ordered by what unblocks the most.
      - Explicit step-by-step browser unblock instructions when Chrome/Safari blocks plain HTTP `getUserMedia`.
      - Live 60 FPS Canvas Oscilloscope & VU Volume Level meter bar (`0-100% dBFS`, green -> yellow -> red peak) to confirm live audio capture.
      - **Fallback Telephony Stream Test button**: Allows instant testing of live AI scoring engine even when local OS/browser blocks microphone hardware.
+
+---
+
+## 21. Policy Engine Stabilization & Embedded Live Spectrogram Panel (2026-08-28)
+
+1. **Policy Engine Threshold & Windowing Calibration (`policy/policy.yaml`)**:
+   - Bumped `policy_version` to `"0.1.1"`.
+   - Calibrated `high_window_risk` threshold from `0.78` -> `0.65` for Web mic acoustic response.
+   - Updated evidence parameters from `k: 3, n: 5` (3.2s window) -> `k: 2, n: 3` (1.28s window) so risk states transition dynamically and stabilize within 1.28s of speech.
+   - Rebuilt `sih26104-gateway` Docker image to load updated policy bundle.
+
+2. **Live FFT Spectrogram & Peak Frequency Detector (`AudioVisualizer.tsx`)**:
+   - Embedded a high-resolution 512-bin FFT Spectrogram Waterfall directly inside the recording panel with dark zinc radar styling and 0Hz – 8kHz frequency markers.
+   - Added live peak frequency detector (`PEAK: 2400 Hz`) to track human voice fundamentals and formants.
+   - All tests, builds, and containers verified green (`0506e68`).
