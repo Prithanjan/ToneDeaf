@@ -131,7 +131,7 @@ class TestExactPins:
         is only meaningfully exercised against a real ``InferenceSession``.
         """
         dev = _requirement_pins(REQUIREMENTS_DEV)
-        assert dev["onnxruntime"] == "1.20.1"
+        assert dev["onnxruntime"] == "1.20.0"
         assert "onnxruntime-gpu" not in dev
 
     def test_grpcio_tools_matches_grpcio(self) -> None:

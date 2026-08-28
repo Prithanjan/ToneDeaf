@@ -151,7 +151,7 @@ jobs:
       # It is restated here only because the tier switch is passed as a build argument, and a build
       # argument that disagrees with the pinned wheel would produce two tiers linked against different
       # ORT versions — a parity-set violation that no test would catch.
-      ORT_VERSION: "1.20.1"
+      ORT_VERSION: "1.20.0"
     permissions:
       contents: read
       id-token: write # rules.md R-55 — OIDC. No AWS_ACCESS_KEY_ID exists in this repository.

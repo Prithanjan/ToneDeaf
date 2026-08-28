@@ -62,14 +62,14 @@ WORKDIR /app
 FROM base AS builder
 
 # THE tier switch. Exactly one wheel, one version, named in one place.
-ARG ORT_VERSION=1.20.1
+ARG ORT_VERSION=1.20.0
 ARG ORT_PACKAGE=onnxruntime
 
 # NVIDIA CUDA/cuDNN runtime libraries, as pip wheels, for the GPU build only. Empty on the CPU build,
 # so the CPU image carries no CUDA at all.
 #
-# UNVERIFIED ON THIS WORKSTATION. There is no GPU and no CUDA toolkit here, so the exact wheel set that
-# satisfies onnxruntime-gpu 1.20.1's CUDA 12.x / cuDNN 9.x requirement has not been executed — it is
+# ⚠️ The CUDA wheel set below is a pinned placeholder (rules.md R-01). The exact wheel bundle that
+# satisfies onnxruntime-gpu 1.20.0's CUDA 12.x / cuDNN 9.x requirement has not been executed — it is
 # validated at the Phase 4 GPU deploy. That is acceptable precisely because getting it wrong is LOUD:
 # app/model.py passes a single-entry provider list and then asserts get_providers()[0], so a missing
 # library produces ProviderUnavailable before the port is bound. There is no path from a wrong value

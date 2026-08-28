@@ -129,7 +129,7 @@ services:
         # difference between the two Scorer images, and it is why they cannot be byte-identical and
         # therefore live in separate ECR repositories (sih26104/scorer-cpu vs sih26104/scorer-gpu).
         ORT_PACKAGE: onnxruntime
-        ORT_VERSION: "1.20.1"
+        ORT_VERSION: "1.20.0"
         CUDA_PIP_PACKAGES: ""
         GIT_COMMIT: ${GIT_COMMIT:-unknown-local}
     image: sih26104/scorer-cpu:local

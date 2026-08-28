@@ -13,8 +13,8 @@
 # It is the ONE dependency that differs between the two Scorer images, and it is selected by the
 # ORT_PACKAGE build argument in scorer/Dockerfile:
 #
-#     onnxruntime-gpu==1.20.1   →  sih26104/scorer-gpu   (aws-gpu tier, CUDAExecutionProvider)
-#     onnxruntime==1.20.1       →  sih26104/scorer-cpu   (local-cpu tier, CPUExecutionProvider)
+#     onnxruntime-gpu==1.20.0   →  sih26104/scorer-gpu   (aws-gpu tier, CUDAExecutionProvider)
+#     onnxruntime==1.20.0       →  sih26104/scorer-cpu   (local-cpu tier, CPUExecutionProvider)
 #
 # Listing one of them here and overriding it in the other image would mean this file describes only one
 # of the two images while appearing to describe both. Naming neither, and pinning the version in
