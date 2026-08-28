@@ -321,8 +321,6 @@ export function App(): ReactElement {
           />
         ) : null}
 
-        <AudioVisualizer isLive={phase === 'live'} onStartSimulatedTest={startSimulatedSession} />
-
         {phase === 'setup' ? (
           <SessionSetup
             onSubmit={(values) => {
@@ -354,6 +352,8 @@ export function App(): ReactElement {
               evidenceWindowCount={evidenceWindowCount}
               evidenceHighCount={evidenceHighCount}
             />
+
+            <AudioVisualizer isLive={phase === 'live'} onStartSimulatedTest={startSimulatedSession} />
 
             <section className={styles.transport} aria-label="Stream health">
               <dl className={styles.transportGrid}>
