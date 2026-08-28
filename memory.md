@@ -1901,3 +1901,18 @@ For a cold pickup. Ordered by what unblocks the most.
    - `aws elbv2 describe-target-health` returned `State: healthy` on target IP `10.42.9.7:8080`.
    - Gateway connected to Scorer over AWS Service Discovery `scorer.sih26104.local:50051`.
    - Ready for live audio stream scoring (cloned voice vs human ground-truth audio test).
+
+---
+
+## 19. Systematic Debugging & Live Scoring Verification (2026-08-28)
+
+1. **Root Causes Identified & Fixed**:
+   - **Root Cause A (gRPC Ping Throttling)**: `sih26104-scorer` sent gRPC `GOAWAY` (`too_many_pings` / `ENHANCE_YOUR_CALM`) to `sih26104-gateway` during idle keepalives, causing `score_window` calls to raise `ScorerUnavailable` and drop windows.
+     - *Fix*: Added `grpc.http2.min_ping_interval_without_data_ms` (5000) and `grpc.http2.max_ping_strikes` (0) in `scorer/app/server.py`.
+   - **Root Cause B (Stereo Microphone Capture Disconnect)**: `pwa/src/lib/capture.ts` stopped audio processing if `input.numberOfChannels !== 1`, which broke on 2-channel stereo laptop/mobile microphones.
+     - *Fix*: Updated `capture.ts` to extract channel 0 safely across single and multi-channel devices.
+
+2. **End-to-End Live Verification**:
+   - Executed live WebSocket test streaming 200 PCM speech frames to Gateway (`:8080`).
+   - Received live events: `risk.event` with `window_seq: 0`, `window_seq: 1`, `window_seq: 2`, `spoof_risk: 1.0`, `eligible: true`.
+   - All fixes committed (`d75f7db`) and pushed to `main`.
