@@ -4,7 +4,7 @@
   "release_name": "ToneDeaf Voice Integrity Control Plane — Phase 4 Release",
   "created_at": "2026-08-28T20:00:00Z",
   "project": "SIH26104 / ToneDeaf",
-  "aws_account": "075213340955",
+  "aws_account": "123456789012",
   "aws_region": "ap-south-1",
   "git": {
     "commit": "aa3f3b41355431cd942d3371276733905c7496bc",
@@ -44,7 +44,7 @@
   "docker_images": [
     {
       "image_id": "scorer_cpu",
-      "ecr_repository": "075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-cpu",
+      "ecr_repository": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-cpu",
       "tag": "latest",
       "digest": "sha256:227e61a61241928959fbf7e770f7ca5f9f5483e55b96890e0e791481a0a8e85d",
       "base": "python:3.11-slim",
@@ -54,7 +54,7 @@
     },
     {
       "image_id": "scorer_gpu",
-      "ecr_repository": "075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-gpu",
+      "ecr_repository": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-gpu",
       "tag": "latest",
       "digest": "sha256:227e61a61241928959fbf7e770f7ca5f9f5483e55b96890e0e791481a0a8e85d",
       "base": "nvidia/cuda:12.4.1-runtime-ubuntu22.04",
@@ -64,7 +64,7 @@
     },
     {
       "image_id": "gateway",
-      "ecr_repository": "075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/gateway",
+      "ecr_repository": "123456789012.dkr.ecr.ap-south-1.amazonaws.com/sih26104/gateway",
       "tag": "latest",
       "digest": "sha256:3ad2461176b5a08f7d42b9daf281085c9fa558ab7e304bd1a4ca29f213885b07",
       "base": "python:3.11-slim",

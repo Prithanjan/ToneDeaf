@@ -127,7 +127,7 @@ export function PrivacyInspector({
         <nav className={styles.tabs} aria-label="Privacy Inspector Views">
           <button
             type="button"
-            className={`${styles.tab} ${activeTab === 'volatile-memory' ? styles.tabActive : ''}`}
+            className={activeTab === 'volatile-memory' ? [styles.tab, styles.tabActive].join(' ') : styles.tab}
             onClick={() => {
               setActiveTab('volatile-memory');
             }}
@@ -136,7 +136,7 @@ export function PrivacyInspector({
           </button>
           <button
             type="button"
-            className={`${styles.tab} ${activeTab === 'pseudonym' ? styles.tabActive : ''}`}
+            className={activeTab === 'pseudonym' ? [styles.tab, styles.tabActive].join(' ') : styles.tab}
             onClick={() => {
               setActiveTab('pseudonym');
             }}
@@ -145,7 +145,7 @@ export function PrivacyInspector({
           </button>
           <button
             type="button"
-            className={`${styles.tab} ${activeTab === 'hashes' ? styles.tabActive : ''}`}
+            className={activeTab === 'hashes' ? [styles.tab, styles.tabActive].join(' ') : styles.tab}
             onClick={() => {
               setActiveTab('hashes');
             }}
@@ -154,7 +154,7 @@ export function PrivacyInspector({
           </button>
           <button
             type="button"
-            className={`${styles.tab} ${activeTab === 'audit-chain' ? styles.tabActive : ''}`}
+            className={activeTab === 'audit-chain' ? [styles.tab, styles.tabActive].join(' ') : styles.tab}
             onClick={() => {
               setActiveTab('audit-chain');
             }}

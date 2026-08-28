@@ -178,7 +178,7 @@ export interface AuditEventRecord {
   spoof_risk: number | null;
   risk_state: RiskState;
   action: Action;
-  reason_code: ReasonCode | string;
+  reason_code: string;
   policy_version: string;
   policy_bundle_sha256: string;
   model_version: string;
@@ -186,9 +186,9 @@ export interface AuditEventRecord {
   calibration_version: string;
   calibration_sha256: string;
   quality_flags: QualityFlag[];
-  detector_mode: DetectorMode | string;
+  detector_mode: string;
   execution_provider: string;
-  deployment_profile: DeploymentProfile | string;
+  deployment_profile: string;
   prev_event_hash: string;
   event_hash: string;
   retention_expires_at: string;
