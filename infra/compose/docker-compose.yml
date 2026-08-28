@@ -95,7 +95,7 @@ services:
       # also means the normalization path in env.py runs on every local migration instead of being dead
       # code that rots unnoticed.
       DATABASE_URL: postgresql://sih26104:${POSTGRES_PASSWORD}@postgres:5432/sih26104
-      ALLOWED_ORIGINS: https://sih26104.local
+      ALLOWED_ORIGINS: https://sih26104.local,http://localhost:4173,http://127.0.0.1:4173,http://10.21.100.126:4173,http://localhost:5173,http://127.0.0.1:5173,http://10.21.100.126:5173
       POLICY_BUNDLE_PATH: /policy/policy.yaml
       CALIBRATION_PATH: /policy/calibration.json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

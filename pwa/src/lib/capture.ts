@@ -319,10 +319,7 @@ class ScriptProcessorCapture implements CaptureSession {
       if (this.stopped) return;
 
       const input = event.inputBuffer;
-      if (input.numberOfChannels !== CHANNELS) {
-        // Refuse rather than average the channels. The Scorer's contract is explicit that no channel
-        // downmix happens anywhere (`contracts/frame_contract.md` §5); doing one here would be an
-        // undeclared preprocessing step on the serving side only.
+      if (input.numberOfChannels < 1) {
         this.stop();
         return;
       }
