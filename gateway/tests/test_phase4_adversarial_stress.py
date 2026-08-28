@@ -35,7 +35,6 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
-import httpx
 import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -565,13 +564,11 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
                 },
             )
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.get(
-                f"/api/v1/sessions/{session_id}/audit",
-                headers={"authorization": "Bearer valid-token"},
-            )
+        client = TestClient(app)
+        resp = client.get(
+            f"/api/v1/sessions/{session_id}/audit",
+            headers={"authorization": "Bearer valid-token"},
+        )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == session_id
@@ -617,13 +614,11 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
         # Tamper row at index 2
         audit.rows[2]["action"] = "escalate"
 
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.get(
-                f"/api/v1/sessions/{session_id}/audit",
-                headers={"authorization": "Bearer valid-token"},
-            )
+        client = TestClient(app)
+        resp = client.get(
+            f"/api/v1/sessions/{session_id}/audit",
+            headers={"authorization": "Bearer valid-token"},
+        )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == session_id
