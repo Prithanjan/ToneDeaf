@@ -1772,3 +1772,32 @@ For a cold pickup. Ordered by what unblocks the most.
     cheapest gate that would have caught BUG-8 on day one.
 
 
+
+
+---
+
+## 13. Phase 0/1 Live AWS Deployment & Infrastructure Ledger (2026-08-28)
+
+1. **Foundational CDK Stacks Deployed (`ap-south-1` & `us-east-1`)**:
+   - `NetworkStack`: VPC (`vpc-04471da250add0d31`), 6 subnets, 1 NAT Gateway, deny-by-default SGs.
+   - `DataStack`: RDS PostgreSQL 16.11 Graviton instance (`datastack-auditdbf2a0c6bc-iz2ilngrck7q.cxegea2airra.ap-south-1.rds.amazonaws.com`), S3 audit/artifact buckets.
+   - `CostSafetyStack` (`us-east-1`): $100 budget hard limit, $80 alert threshold, RuntimeStopper Lambda.
+   - `SecretsStack`: Phase 0 placeholder secrets & RDS credential export.
+   - `ComputeStack`: ECS Cluster `sih26104`, internal Gateway ALB, LaunchTemplate (`ScorerGpuLaunchTemplate`), Task Definitions (`gateway`, `scorer`, `gateway-migrate`).
+
+2. **Docker Container Images Built & Pushed to AWS ECR**:
+   - `sih26104/gateway`: `sha256:3ad2461176b5a08f7d42b9daf281085c9fa558ab7e304bd1a4ca29f213885b07` (tag: `latest`)
+   - `sih26104/scorer-cpu`: `sha256:227e61a61241928959fbf7e770f7ca5f9f5483e55b96890e0e791481a0a8e85d` (tag: `latest`)
+   - `sih26104/scorer-gpu`: `sha256:227e61a61241928959fbf7e770f7ca5f9f5483e55b96890e0e791481a0a8e85d` (tag: `latest`)
+   - `ComputeStack` updated with immutable digests. Runtime zero invariant verified (Desired=0 across services and ASG).
+
+3. **Database Migration Verified (§8)**:
+   - Assembled live RDS PostgreSQL connection string in `sih26104/database-url` secret.
+   - Ran one-shot Fargate migration task `gateway-migrate` (`arn:aws:ecs:ap-south-1:075213340955:task/sih26104/f7b4252a23c34692a2a6937671060880`).
+   - Alembic applied revision `0001_audit_event` (`audit_event` hash-chained evidence table) successfully. Exit code: 0.
+
+4. **Cognito User Pool & Public App Client Provisioned (§10)**:
+   - User Pool ID: `ap-south-1_UHmM7drMS` (`sih26104-users`)
+   - Public App Client ID: `7tn5kq3aikrhkcgmf1a81en1m3` (`sih26104-pwa-client`, SRP auth flow, no secret)
+   - MFA: Software TOTP enabled, SMS disabled (R-15 compliance)
+   - Seeded verified Analyst user: `analyst-demo-1` (`analyst1@example.invalid`).
