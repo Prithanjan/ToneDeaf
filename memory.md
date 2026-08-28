@@ -1849,3 +1849,24 @@ For a cold pickup. Ordered by what unblocks the most.
 3. **Cost Guardrail Adherence (R-30 & R-31)**:
    - Scaled services back to `desired-count 0` after test completion to maintain $0 idle spend.
    - ASG capacity verified at 0/0/0.
+
+---
+
+## 16. Phase 4 Full Execution & Local Edge Stack Verification (2026-08-28)
+
+1. **Phase 4 Deliverables Complete**:
+   - **Milestone 1 (AASIST Robustness & Codec Hardening)**: Min-length zero-padding guards (`MIN_LEN_16K = 320`) added to `evaluation/codecs.py`. Split disjointness enforced (`rvc:v2.0` held out). 158/158 evaluation tests PASSED.
+   - **Milestone 2 (Privacy Inspector & Mobile Flow)**: Built judge-facing 4-tab `PrivacyInspector.tsx`. Verified 0 bytes raw audio in Postgres RDS `audit_event` via `verify_database_privacy.py`.
+   - **Milestone 3 (Evidence Pack & Traceability Matrix)**: Assembled `docs/manifests/release_manifest.json` with frozen SHA-256 digests and created `docs/manifests/traceability_matrix.md`.
+   - **Milestone 4 (CI Pipeline Repair)**: Injected `CurrentAudit` dependency into `gateway/app/api/deps.py` & `health.py`. All 5 GitHub Actions workflows (`gateway-ci`, `privacy-check`, `contract-check`, `secret-scan`, `pwa-ci`) passed 100% green on commit `f689f29`.
+
+2. **Local Edge Docker Stack (100% Healthy)**:
+   - `sih26104-caddy`: Up on port 443 with self-signed TLS certs.
+   - `sih26104-gateway`: Up (healthy) on port 8080.
+   - `sih26104-scorer`: Up (healthy) on port 50051 running `REAL_DETECTOR` with AASIST ONNX model.
+   - `sih26104-postgres`: Up (healthy) on port 5432.
+
+3. **PWA Dev Preview & Insecure HTTP Fallback**:
+   - Fixed `vite.config.ts` preview proxy to target Gateway container on `http://127.0.0.1:8080`.
+   - Added local demo token grant fallback in `pwa/src/lib/auth.ts` to eliminate `AUTH_UNCONFIGURED` errors when testing without an IdP.
+   - Added `SimulatedCaptureSession` fallback in `pwa/src/lib/capture.ts` for non-secure HTTP mobile contexts (`http://10.21.100.126:4173`), enabling live streaming and risk timeline testing on any mobile device without browser `getUserMedia` security blocks.
