@@ -149,9 +149,9 @@ class TestThresholdIsMarkedAsAPlaceholder:
         assert "0.78 IS A PLACEHOLDER" in text
         assert "NOT A MEASURED VALUE" in text.upper()
         for rule in ("R-01", "R-02", "R-03", "R-04"):
-            assert rule in text, (
-                f"the honesty rules are not cited next to the number: {rule}"
-            )
+            assert (
+                rule in text
+            ), f"the honesty rules are not cited next to the number: {rule}"
 
     def test_the_file_says_what_would_make_it_real(self) -> None:
         """ "This is a placeholder" with no exit criteria is how a placeholder becomes permanent."""
@@ -170,9 +170,9 @@ class TestThresholdIsMarkedAsAPlaceholder:
             "measured at",
             "eer of",
         ):
-            assert claim not in text, (
-                f"the bundle claims the threshold was derived: {claim!r}"
-            )
+            assert (
+                claim not in text
+            ), f"the bundle claims the threshold was derived: {claim!r}"
 
     def test_the_threshold_is_inside_the_open_interval(self) -> None:
         """``PolicyThresholds`` rejects 0 and 1: a threshold of 0 makes every window high and 1 makes
@@ -247,9 +247,9 @@ class TestActionVocabularyIsClosed:
         """Comments are stripped first: the bundle names these words in prose to forbid them, and the
         explanation must not be the thing that fails the test."""
         for number, line in enumerate(strip_comments(yaml_lines()), start=1):
-            assert not re.search(rf"[:\-]\s*{banned}\s*$", line), (
-                f"policy.yaml:{number}: {line!r}"
-            )
+            assert not re.search(
+                rf"[:\-]\s*{banned}\s*$", line
+            ), f"policy.yaml:{number}: {line!r}"
 
     def test_the_bundle_states_that_the_vocabulary_is_closed(self) -> None:
         text = POLICY_YAML.read_text(encoding="utf-8")
@@ -279,17 +279,17 @@ class TestPurposeActionMap:
         same defect as setting ``k: 1`` and is invisible in the threshold.
         """
         for purpose, mapping in purpose_actions().items():
-            assert mapping["collecting"] == "continue", (
-                f"{purpose} acts before the evidence bar"
-            )
+            assert (
+                mapping["collecting"] == "continue"
+            ), f"{purpose} acts before the evidence bar"
 
     def test_high_is_never_ignored(self) -> None:
         """The other end of the same argument. If any purpose mapped ``high`` to ``continue``, the
         evidence bar could be met and nothing would happen — a detector wired to nothing."""
         for purpose, mapping in purpose_actions().items():
-            assert mapping["high"] != "continue", (
-                f"{purpose} ignores a met evidence bar"
-            )
+            assert (
+                mapping["high"] != "continue"
+            ), f"{purpose} ignores a met evidence bar"
 
     def test_the_same_evidence_produces_different_actions_for_different_purposes(
         self,
@@ -370,9 +370,9 @@ class TestBundleIdentityAndHashDiscipline:
         the moment it is written. A stale digest is worse than none — it invites a comparison that
         always fails, and the fix people reach for is disabling the comparison."""
         for line in strip_comments(yaml_lines()):
-            assert not re.match(r"\s*\w*sha256\w*:", line), (
-                f"self-referential digest field: {line!r}"
-            )
+            assert not re.match(
+                r"\s*\w*sha256\w*:", line
+            ), f"self-referential digest field: {line!r}"
 
     def test_the_file_explains_that_its_bytes_are_the_canonical_form(self) -> None:
         """The loader hashes raw bytes, so a reformat is a policy change in the audit trail. Somebody
@@ -506,9 +506,9 @@ class TestCalibrationSplitDiscipline:
     def test_the_artifact_explains_why_and_cites_the_rule(self) -> None:
         text = CALIBRATION_JSON.read_text(encoding="utf-8")
         assert "R-37" in text
-        assert "R-38" in text, (
-            "the grouping-before-augmentation requirement is not mentioned"
-        )
+        assert (
+            "R-38" in text
+        ), "the grouping-before-augmentation requirement is not mentioned"
 
     def test_promotion_requires_more_than_editing_the_status(self) -> None:
         """A checklist in the file, in order, so "make it policy_eligible" cannot be a one-line diff

@@ -94,10 +94,9 @@ class TestParity:
     def test_shared_constant_matches(self, name: str, ts_values: dict[str, object]) -> None:
         assert hasattr(py_constants, name), f"{name} is missing from gateway/app/constants.py"
         assert name in ts_values, f"{name} is missing from pwa/src/lib/constants.ts"
-        expected = getattr(py_constants, name)
-        assert ts_values[name] == expected, (
-            f"{name} diverged: python={expected!r} typescript={ts_values[name]!r}"
-        )
+        assert (
+            ts_values[name] == expected
+        ), f"{name} diverged: python={expected!r} typescript={ts_values[name]!r}"
 
     def test_the_four_wire_sizes_are_exact(self, ts_values: dict[str, object]) -> None:
         """Spelled out as literals in exactly one place — here — so the test would catch a coordinated

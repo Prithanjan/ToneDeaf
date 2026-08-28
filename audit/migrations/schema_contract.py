@@ -594,22 +594,22 @@ def _self_check() -> None:
     *and* the migration together) would pass every per-column check.
     """
     assert len(COLUMN_NAMES) == len(set(COLUMN_NAMES)), "duplicate column name"
-    assert set(UNCHAINED_COLUMNS) <= set(COLUMN_NAMES), (
-        "unchained column not on the allow-list"
-    )
-    assert not (set(CHAINED_COLUMNS) & set(UNCHAINED_COLUMNS)), (
-        "column both chained and excluded"
-    )
+    assert set(UNCHAINED_COLUMNS) <= set(
+        COLUMN_NAMES
+    ), "unchained column not on the allow-list"
+    assert not (
+        set(CHAINED_COLUMNS) & set(UNCHAINED_COLUMNS)
+    ), "column both chained and excluded"
     assert len(CHAINED_COLUMNS) + len(UNCHAINED_COLUMNS) == len(COLUMN_NAMES)
-    assert not forbidden_substring_hits(COLUMN_NAMES), (
-        "the allow-list itself trips the deny-list"
-    )
-    assert not deny_list_violations(declared_column_facts()), (
-        "the declared schema is not clean"
-    )
-    assert not (set(ACTION_VOCABULARY) & set(FORBIDDEN_ACTION_VALUES)), (
-        "R-07 violated in-module"
-    )
+    assert not forbidden_substring_hits(
+        COLUMN_NAMES
+    ), "the allow-list itself trips the deny-list"
+    assert not deny_list_violations(
+        declared_column_facts()
+    ), "the declared schema is not clean"
+    assert not (
+        set(ACTION_VOCABULARY) & set(FORBIDDEN_ACTION_VALUES)
+    ), "R-07 violated in-module"
     names = [c.name for c in (*CHECK_CONSTRAINTS, *UNIQUE_CONSTRAINTS, *INDEXES)]
     assert len(names) == len(set(names)), "duplicate constraint or index name"
 

@@ -119,12 +119,12 @@ class TestAllowList:
     def test_declared_types_match_the_spec(self) -> None:
         for name, sql_type, nullable in SPEC_5_1:
             column = sc.COLUMNS_BY_NAME[name]
-            assert column.sql_type == sql_type, (
-                f"{name}: {column.sql_type!r} != {sql_type!r}"
-            )
-            assert column.nullable is nullable, (
-                f"{name}: nullability disagrees with §5.1"
-            )
+            assert (
+                column.sql_type == sql_type
+            ), f"{name}: {column.sql_type!r} != {sql_type!r}"
+            assert (
+                column.nullable is nullable
+            ), f"{name}: nullability disagrees with §5.1"
 
     def test_only_window_seq_and_spoof_risk_are_nullable(self) -> None:
         """Lifecycle events have no window and no score; everything else is always known at write
@@ -279,9 +279,9 @@ class TestActionVocabulary:
         """
         assert "purpose_code ~ '^[a-z][a-z0-9_]{2,63}$'" in create_table_sql
         for purpose in openapi_enum("PurposeCode"):
-            assert re.match(sc.LOWER_SNAKE_REGEX, purpose), (
-                f"{purpose} would be rejected by the CHECK"
-            )
+            assert re.match(
+                sc.LOWER_SNAKE_REGEX, purpose
+            ), f"{purpose} would be rejected by the CHECK"
 
 
 class TestCallRefConstraint:
@@ -307,9 +307,9 @@ class TestCallRefConstraint:
     def test_the_pattern_rejects_things_that_are_not_pseudonyms(self, raw: str) -> None:
         """The regex is the constraint's whole content, so it is worth testing as a regex. Every value
         here is something a well-meaning integration would plausibly put in ``client_call_ref``."""
-        assert not re.match(sc.HEX64_REGEX, raw), (
-            f"{raw!r} would be accepted as a call_ref"
-        )
+        assert not re.match(
+            sc.HEX64_REGEX, raw
+        ), f"{raw!r} would be accepted as a call_ref"
 
     def test_the_pattern_accepts_a_real_pseudonym(self) -> None:
         assert re.match(sc.HEX64_REGEX, "a3f" + "0" * 61)
@@ -432,9 +432,9 @@ class TestMigrationDiscipline:
         place the column list lives — so autogenerate is refused rather than merely discouraged."""
         env = (Path(sc.__file__).parent / "env.py").read_text(encoding="utf-8")
         assert "target_metadata = None" in env
-        assert "autogenerate" in env.lower(), (
-            "env.py must document why autogenerate is unavailable"
-        )
+        assert (
+            "autogenerate" in env.lower()
+        ), "env.py must document why autogenerate is unavailable"
 
     def test_downgrade_states_the_recovery_path(
         self, head_revision: ModuleType

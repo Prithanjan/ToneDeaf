@@ -289,9 +289,9 @@ class TestGatewayConstantsParity:
     @pytest.mark.parametrize("name", _SHARED_CONSTANTS)
     def test_constant_matches_the_gateway(self, name: str) -> None:
         gateway = _parse_python_constants(REPO_ROOT / "gateway" / "app" / "constants.py")
-        assert getattr(contract, name) == gateway[name], (
-            f"{name} differs between scorer/app/contract.py and gateway/app/constants.py"
-        )
+        assert (
+            getattr(contract, name) == gateway[name]
+        ), f"{name} differs between scorer/app/contract.py and gateway/app/constants.py"
 
     def test_scorer_does_not_redeclare_frame_level_constants(self) -> None:
         """Prevents a third copy of 648/640 appearing in a service that cannot exercise them.

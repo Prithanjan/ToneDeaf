@@ -98,9 +98,9 @@ def build_verifiable_session(
     for event, (prev, current) in zip(events, chain_events(TEST_CHAIN_KEY, events)):
         event["prev_event_hash"] = prev
         event["event_hash"] = current
-    assert verify_chain(TEST_CHAIN_KEY, events).ok, (
-        "builder produced an unverifiable session"
-    )
+    assert verify_chain(
+        TEST_CHAIN_KEY, events
+    ).ok, "builder produced an unverifiable session"
     return events
 
 
@@ -637,9 +637,9 @@ class TestSqlSafetyProperties:
                 or "DELETE" not in statement
             ):
                 continue
-            assert "session_id = $1" in statement, (
-                f"{name} deletes without a session scope"
-            )
+            assert (
+                "session_id = $1" in statement
+            ), f"{name} deletes without a session scope"
 
     def test_the_expiry_predicate_uses_max_not_min(self) -> None:
         """``HAVING min(retention_expires_at) <= $1`` would select every session with *any* expired row

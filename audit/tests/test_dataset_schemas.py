@@ -448,9 +448,9 @@ class TestNoRawAudioAnywhereInTheManifest:
             property_names(LEDGER_SCHEMA)
         )
         for name, substring in self.SUBSTRING_EXCEPTIONS.items():
-            assert name in declared, (
-                f"{name!r} is excused but no longer a property anywhere"
-            )
+            assert (
+                name in declared
+            ), f"{name!r} is excused but no longer a property anywhere"
             hits = dict(sc.forbidden_substring_hits([name]))
             assert hits.get(name) == substring, (
                 f"{name!r} no longer trips {substring!r}; delete the exception rather than "
@@ -735,9 +735,9 @@ class TestAccentIsNeverInferredFromAudio:
 
     def test_the_source_is_required_alongside_the_value(self) -> None:
         required = MANIFEST_SCHEMA["$defs"]["record"]["required"]
-        assert "accent_region" in required and "accent_region_source" in required, (
-            "an accent value with no provenance is indistinguishable from a guessed one"
-        )
+        assert (
+            "accent_region" in required and "accent_region_source" in required
+        ), "an accent value with no provenance is indistinguishable from a guessed one"
 
 
 # ==================================================================================================
@@ -754,9 +754,9 @@ class TestConsentIsMandatoryOnEveryRecord:
             if r["consent_basis"] != "public-corpus-license-only"
         )
         record["retention_expiry"] = None
-        assert validate(doc, MANIFEST_SCHEMA) != [], (
-            "consent with no expiry is indefinite consent, which is not what anyone signs"
-        )
+        assert (
+            validate(doc, MANIFEST_SCHEMA) != []
+        ), "consent with no expiry is indefinite consent, which is not what anyone signs"
 
     def test_a_public_corpus_may_omit_it(self) -> None:
         # The permitted case, asserted so the constraint above is not accidentally absolute.
@@ -770,9 +770,9 @@ class TestConsentIsMandatoryOnEveryRecord:
     def test_an_empty_consent_basis_is_not_a_valid_value(self) -> None:
         doc = copy.deepcopy(MANIFEST_EXAMPLE)
         doc["records"][0]["consent_basis"] = ""
-        assert validate(doc, MANIFEST_SCHEMA) != [], (
-            "a blank basis is an absence of information wearing the clothes of an answer"
-        )
+        assert (
+            validate(doc, MANIFEST_SCHEMA) != []
+        ), "a blank basis is an absence of information wearing the clothes of an answer"
 
 
 # ==================================================================================================
@@ -825,12 +825,12 @@ class TestConsentLedger:
     @pytest.mark.privacy
     def test_the_example_contains_no_identifier_shaped_value(self) -> None:
         blob = LEDGER_EXAMPLE_PATH.read_text("utf-8")
-        assert re.search(r"\b(?:\+?91[-\s]?)?[6-9]\d{9}\b", blob) is None, (
-            "phone-shaped number"
-        )
-        assert re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", blob) is None, (
-            "email-shaped string"
-        )
+        assert (
+            re.search(r"\b(?:\+?91[-\s]?)?[6-9]\d{9}\b", blob) is None
+        ), "phone-shaped number"
+        assert (
+            re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", blob) is None
+        ), "email-shaped string"
 
     def test_the_subject_hash_has_the_same_shape_as_the_manifest_speaker_hash(
         self,
@@ -848,9 +848,9 @@ class TestConsentLedger:
     ) -> None:
         assert "withdrawal" in LEDGER_SCHEMA["$defs"]["record"]["required"]
         for record in LEDGER_EXAMPLE["records"]:
-            assert "withdrawn" in record["withdrawal"], (
-                "an absent withdrawal block cannot distinguish 'not withdrawn' from 'not checked'"
-            )
+            assert (
+                "withdrawn" in record["withdrawal"]
+            ), "an absent withdrawal block cannot distinguish 'not withdrawn' from 'not checked'"
 
     def test_a_withdrawal_without_a_date_is_rejected(self) -> None:
         doc = copy.deepcopy(LEDGER_EXAMPLE)
@@ -878,17 +878,17 @@ class TestConsentLedger:
             "withdrawn_at": "2026-02-01T00:00:00Z",
             "deletion_completed_at": None,
         }
-        assert validate(doc, LEDGER_SCHEMA) != [], (
-            "the safe reading of that contradiction is that somebody's withdrawal was reverted"
-        )
+        assert (
+            validate(doc, LEDGER_SCHEMA) != []
+        ), "the safe reading of that contradiction is that somebody's withdrawal was reverted"
 
     def test_cloning_permission_cannot_contradict_the_consent_scope(self) -> None:
         doc = copy.deepcopy(LEDGER_EXAMPLE)
         record = next(r for r in doc["records"] if not r["synthetic_cloning_permitted"])
         record["synthetic_cloning_permitted"] = True
-        assert validate(doc, LEDGER_SCHEMA) != [], (
-            "two fields that can disagree about whether a voice may be cloned are worse than one"
-        )
+        assert (
+            validate(doc, LEDGER_SCHEMA) != []
+        ), "two fields that can disagree about whether a voice may be cloned are worse than one"
 
     def test_demo_playback_requires_a_named_capture_session(self) -> None:
         doc = copy.deepcopy(LEDGER_EXAMPLE)
@@ -959,9 +959,9 @@ class TestTheTwoFilesJoin:
         }
         for record in manifest_records():
             if record["sample_id"] in by_sample:
-                assert by_sample[record["sample_id"]] == record["retention_expiry"], (
-                    "two retention dates for one sample means the earlier one will be ignored"
-                )
+                assert (
+                    by_sample[record["sample_id"]] == record["retention_expiry"]
+                ), "two retention dates for one sample means the earlier one will be ignored"
 
     def test_the_ledger_basis_vocabulary_is_the_manifest_one_minus_the_licence_case(
         self,
@@ -978,9 +978,9 @@ class TestTheTwoFilesJoin:
     def test_every_ledger_form_digest_is_declared_in_the_header(self) -> None:
         declared = {v["form_sha256"] for v in LEDGER_EXAMPLE["consent_form_versions"]}
         for record in LEDGER_EXAMPLE["records"]:
-            assert record["consent_form_sha256"] in declared, (
-                "a form digest with no matching wording means nobody can say what was consented to"
-            )
+            assert (
+                record["consent_form_sha256"] in declared
+            ), "a form digest with no matching wording means nobody can say what was consented to"
 
     def test_the_speaker_hash_is_the_join_key_in_both_directions(self) -> None:
         subjects = {r["subject_id_hash"] for r in LEDGER_EXAMPLE["records"]}

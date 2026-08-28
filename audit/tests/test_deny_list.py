@@ -116,9 +116,9 @@ class TestChainPyAgreement:
         *other* substring, and keeps passing on the day ``raw`` is added there.
         """
         gap = set(sc.FORBIDDEN_COLUMN_SUBSTRINGS) - set(_FORBIDDEN_SUBSTRINGS)
-        assert gap <= {"raw"}, (
-            f"chain.py has lost deny-list coverage for {sorted(gap - {'raw'})}"
-        )
+        assert gap <= {
+            "raw"
+        }, f"chain.py has lost deny-list coverage for {sorted(gap - {'raw'})}"
 
     @pytest.mark.privacy
     def test_raw_is_refused_at_the_database_layer_regardless(self) -> None:
@@ -321,9 +321,9 @@ class TestTheDetectorCatchesRealisticMigrations:
             *sc.declared_column_facts(),
             sc.ColumnFact("audit_event", "audio_ref", "text", "text"),
         ]
-        assert sc.deny_list_violations(poisoned), (
-            "the import-time self-check would not have fired"
-        )
+        assert sc.deny_list_violations(
+            poisoned
+        ), "the import-time self-check would not have fired"
 
     def test_a_clean_second_table_is_still_allowed(self) -> None:
         """Rules 1-4 apply schema-wide, which must not mean "no other table may exist". Alembic's own
@@ -445,7 +445,7 @@ def test_the_deny_list_covers_the_files_that_exist() -> None:
     """
     assert MIGRATIONS_DIR.is_dir(), MIGRATIONS_DIR
     scanned = [p for p in MIGRATIONS_DIR.rglob("*.py") if "__pycache__" not in p.parts]
-    assert len(scanned) >= 3, (
-        f"expected env.py, schema_contract.py and a revision; found {scanned}"
-    )
+    assert (
+        len(scanned) >= 3
+    ), f"expected env.py, schema_contract.py and a revision; found {scanned}"
     assert (Path(MIGRATIONS_DIR) / "versions").is_dir()

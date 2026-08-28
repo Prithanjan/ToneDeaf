@@ -256,9 +256,9 @@ class TestNoPrefilledNumbers:
         assert hits == [], f"{name} pairs a metric name with a figure: {hits}"
 
     def test_the_status_is_not_run(self, name: str) -> None:
-        assert "`not-run`" in read(name), (
-            "a template whose status reads anything else is a report claiming to have been run"
-        )
+        assert (
+            "`not-run`" in read(name)
+        ), "a template whose status reads anything else is a report claiming to have been run"
 
     def test_the_title_says_template(self, name: str) -> None:
         first = read(name).splitlines()[0]
@@ -284,9 +284,9 @@ class TestNoPrefilledNumbers:
         for headers, cells, line in table_rows(read(name)):
             for header, cell in zip(headers, cells):
                 if "signed off by" in cells[0].lower() and header == "value":
-                    assert cell == BLANK, (
-                        f"{name}:{line} pre-fills a sign-off: {cell!r}"
-                    )
+                    assert (
+                        cell == BLANK
+                    ), f"{name}:{line} pre-fills a sign-off: {cell!r}"
 
 
 # ==================================================================================================
@@ -335,9 +335,9 @@ class TestEachGateQuotesThePlaybook:
         # A report that does not identify what it measured cannot be matched to an artifact later,
         # and an unattributable pass is indistinguishable from a pass on something else.
         text = read(name).lower()
-        assert "sha-256" in text or "sha256" in text, (
-            f"{name} records no artifact digest"
-        )
+        assert (
+            "sha-256" in text or "sha256" in text
+        ), f"{name} records no artifact digest"
         assert "commit" in text, f"{name} records no source commit"
 
 
@@ -398,9 +398,9 @@ class TestTheTwoBlockers:
 
     def test_privacy_is_inspected_after_the_system_is_exercised(self) -> None:
         text = read("gate-7-privacy.md")
-        assert "after" in text.lower() and "empty database" in text.lower(), (
-            "an unexercised system passes every check in this gate and proves nothing"
-        )
+        assert (
+            "after" in text.lower() and "empty database" in text.lower()
+        ), "an unexercised system passes every check in this gate and proves nothing"
 
     def test_the_readme_explains_why_the_two_blockers_differ(self) -> None:
         text = read("README.md")
@@ -419,9 +419,9 @@ class TestTheTwoBlockers:
                 continue
             text = read(name)
             assert "DEPLOY BLOCKER" not in text, f"{name} claims to be a deploy blocker"
-            assert "RELEASE BLOCKER" not in text, (
-                f"{name} claims to be a release blocker"
-            )
+            assert (
+                "RELEASE BLOCKER" not in text
+            ), f"{name} claims to be a release blocker"
             assert "Not a deploy or release blocker" in text, (
                 f"{name} must say what it does NOT block, so a reader does not assume it halts "
                 "the pipeline"
@@ -488,9 +488,9 @@ class TestGateContentTheProjectDependsOn:
             "Validation-error",
             "Metrics labels",
         ):
-            assert surface in text, (
-                f"{surface} is not inspected; logs are where this gate fails"
-            )
+            assert (
+                surface in text
+            ), f"{surface} is not inspected; logs are where this gate fails"
 
     def test_the_privacy_gate_checks_the_pseudonym_and_the_raw_reference(self) -> None:
         text = read("gate-7-privacy.md")
@@ -597,9 +597,9 @@ class TestTheReadme:
         assert "___" in text
 
     def test_it_points_at_the_test_that_enforces_the_rule(self) -> None:
-        assert "test_evaluation_templates.py" in read("README.md"), (
-            "a documented rule with no named enforcement is a convention"
-        )
+        assert "test_evaluation_templates.py" in read(
+            "README.md"
+        ), "a documented rule with no named enforcement is a convention"
 
     def test_it_requires_criteria_to_be_committed_before_results(self) -> None:
         text = read("README.md")
@@ -608,9 +608,9 @@ class TestTheReadme:
 
     def test_it_says_not_run_and_fail_are_committable(self) -> None:
         text = read("README.md")
-        assert "`not-run` and `fail` are both legitimate" in text, (
-            "if only a pass is committable, the pressure is on the report rather than the system"
-        )
+        assert (
+            "`not-run` and `fail` are both legitimate" in text
+        ), "if only a pass is committable, the pressure is on the report rather than the system"
 
     def test_it_does_not_promote_the_current_artifact_state(self) -> None:
         text = read("README.md")
@@ -640,9 +640,9 @@ class TestTheParserItself:
                 for h, c in zip(headers, cells)
                 if h in VALUE_COLUMNS
             ]
-            assert found, (
-                f"{name}: no value column recognised, so blankness was never checked"
-            )
+            assert (
+                found
+            ), f"{name}: no value column recognised, so blankness was never checked"
 
     def test_it_would_catch_a_filled_cell(self) -> None:
         filled = "| Field | Value |\n|---|---|\n| Scorer latency p95 | 42 |\n"

@@ -306,9 +306,9 @@ class TestScoreWindow:
         for _ in range(5):
             servicer.ScoreWindow(_request(valid_pcm), _FakeContext())
         assert VoiceScorerServicer.__slots__ == ("_runtime",)
-        assert vars(servicer) == {}, (
-            f"the servicer accumulated per-call state: {sorted(vars(servicer))}"
-        )
+        assert (
+            vars(servicer) == {}
+        ), f"the servicer accumulated per-call state: {sorted(vars(servicer))}"
 
     @pytest.mark.privacy
     def test_no_module_on_the_serving_path_opens_a_file_for_writing(self) -> None:
