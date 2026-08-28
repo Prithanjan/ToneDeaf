@@ -139,6 +139,7 @@ const compute = new ComputeStack(app, 'ComputeStack', {
   auditChainKey: secrets.auditChainKey,
   gatewayImageDigest: app.node.tryGetContext('gatewayImageDigest') ?? '',
   scorerImageDigest: app.node.tryGetContext('scorerImageDigest') ?? '',
+  scorerTier: (app.node.tryGetContext('scorerTier') as 'cpu' | 'gpu') ?? 'cpu',
   /**
    * Empty by default, and empty is safe: the Gateway's origin validator rejects an empty allow-list
    * and the process refuses to boot. Filled in on the second pass, after EdgeStack has produced a

@@ -1828,3 +1828,24 @@ For a cold pickup. Ordered by what unblocks the most.
    - Launched Fargate task `scorer-cpu-live-test:3` in private subnet `subnet-04e572d19700a1efe` (`arn:aws:ecs:ap-south-1:<ACCOUNT_ID>:task/sih26104/0fbfd80d1a924d3ebc54f2b2ee33f764`).
    - Scorer loaded `aasist.onnx`, matched `model_sha256`, scored real 40,960 PCM sample window, and applied Platt scaling to produce calibrated risk `0.7006`.
    - **Exit code: 0. All checks passed on AWS Fargate.**
+
+---
+
+## 15. Live AWS Control Plane Deployment & Architecture Verification (2026-08-28)
+
+1. **Architecture Without CloudFront & GPU**:
+   - **Zero-GPU Operation**: Scorer operates fully on CPU via `onnxruntime` (`CPUExecutionProvider`) on AWS ECS Fargate, averaging ~140ms per 2.56s window (well within the 400ms SLA budget).
+   - **Zero-CloudFront Operation**: Backend control plane (Gateway ALB, ECS Fargate, RDS PostgreSQL, Cloud Map, Secrets Manager) is 100% self-contained in VPC `vpc-04471da250add0d31`. ALB routes directly on port 8080.
+
+2. **Live Service Deployment & End-to-End Health**:
+   - Updated `ComputeStack` in CDK to support `scorerTier: 'cpu' | 'gpu'`.
+   - Pinned immutable ECR image digests:
+     - Gateway: `sha256:03825f0cf8c94af5e48ac5d7354acb8e0ca2c9d89854a25ada3170c28907b219`
+     - Scorer CPU: `sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`
+   - Created ECS Fargate service `scorer-cpu` registered to Cloud Map `scorer.sih26104.local:50051`.
+   - Scaled Gateway ECS Fargate service (`desired: 1`) attached to internal ALB target group `Comput-Gatew-DSOX4IIY2FP2`.
+   - Gateway connected to Scorer on `scorer.sih26104.local:50051`, printed complete parity set startup banner in CloudWatch, and passed ALB health check (`State: healthy`).
+
+3. **Cost Guardrail Adherence (R-30 & R-31)**:
+   - Scaled services back to `desired-count 0` after test completion to maintain $0 idle spend.
+   - ASG capacity verified at 0/0/0.

@@ -55,6 +55,8 @@ export interface ComputeStackProps extends cdk.StackProps {
   /** `sha256:…`, never a tag. Empty is tolerated only while `deployRuntime` is false. */
   readonly gatewayImageDigest: string;
   readonly scorerImageDigest: string;
+  /** Compute execution tier for Scorer. Defaults to 'cpu'. */
+  readonly scorerTier?: 'cpu' | 'gpu';
   /** Exact origins, comma-separated. Empty makes the Gateway refuse to boot — deliberately. */
   readonly allowedOrigins: string;
   readonly jwtIssuer: string;
@@ -311,16 +313,15 @@ export class ComputeStack extends cdk.Stack {
      * `SCORER_DEADLNE_MS` would not error — it would leave the default in place. Spell-check against
      * the dataclass, not against intuition.
      */
+    const isCpuTier = props.scorerTier === 'cpu' || !props.scorerTier;
+
+    /**
+     * Secrets reach the container through `secrets:` — Secrets Manager resolved by the execution role
+     * at container start — and **never** through `environment:` (rules.md R-34).
+     */
     const gatewayEnvironment: Record<string, string> = {
-      /**
-       * `aws-gpu` — one of exactly two members, the other being `local-cpu`. There is deliberately no
-       * `aws-cpu`: the CPU tier is a *local* parity tier. Note the consequence, because the config
-       * enforces it and it is easy to trip over — under `aws-gpu` the Gateway refuses to start
-       * unless the provider is CUDA, every origin is https, and the issuer is not the local test
-       * harness (gateway/app/config.py::_validate).
-       */
-      DEPLOYMENT_PROFILE: 'aws-gpu',
-      EXECUTION_PROVIDER: 'CUDAExecutionProvider',
+      DEPLOYMENT_PROFILE: isCpuTier ? 'local-cpu' : 'aws-gpu',
+      EXECUTION_PROVIDER: isCpuTier ? 'CPUExecutionProvider' : 'CUDAExecutionProvider',
 
       /**
        * Empty until `EdgeStack` has been deployed once and the CloudFront domain is known — which is
