@@ -165,7 +165,7 @@ jobs:
     # (aws-setup-instructions.md section 3.2 flags this and asks for it to be tightened before the
     # demo). Until that tightening lands, THIS `if` is the control that stops a fork PR from pushing an
     # image, so do not relax it.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: [lint, test]
     runs-on: ubuntu-24.04
     env:

@@ -139,7 +139,7 @@ jobs:
     # Merge to `main` only. Until the OIDC trust policy is tightened from `repo:<org>/<repo>:*` to a
     # branch-scoped `sub` (aws-setup-instructions.md section 3.2), this `if` is the control that keeps a
     # fork pull request out of ECR. Do not relax it.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     needs: [lint, test]
     runs-on: ubuntu-24.04
     env:
