@@ -148,42 +148,37 @@ class _MockScorer:
 
 
 class MockAuditStore:
-    """In-memory audit store simulating asyncpg connection pool with HMAC chain verification."""
+    """In-memory audit store for testing."""
 
     def __init__(self, chain_key: bytes = TEST_CHAIN_KEY):
         self.chain_key = chain_key
         self.rows: list[dict[str, Any]] = []
-        self.lock = asyncio.Lock()
         self.forgotten: list[str] = []
 
     async def append(self, session_id: str, fields: Mapping[str, Any]) -> tuple[UUID, int]:
         sid = str(session_id).strip().lower()
-        async with self.lock:
-            seq = len([r for r in self.rows if str(r.get("session_id")).strip().lower() == sid])
-            prev = GENESIS_PREV_HASH
-            for r in self.rows:
-                if (
-                    str(r.get("session_id")).strip().lower() == sid
-                    and r.get("event_seq") == seq - 1
-                ):
-                    prev = r.get("event_hash")
-                    break
+        seq = len([r for r in self.rows if str(r.get("session_id")).strip().lower() == sid])
+        prev = GENESIS_PREV_HASH
+        for r in self.rows:
+            if str(r.get("session_id")).strip().lower() == sid and r.get("event_seq") == seq - 1:
+                prev = r.get("event_hash")
+                break
 
-            event: dict[str, Any] = {**fields, "event_seq": seq}
-            digest = event_hash(self.chain_key, event, prev)
-            event_id = uuid4()
-            occurred_at = event["occurred_at"]
-            retention_expires_at = occurred_at + timedelta(days=90)
+        event: dict[str, Any] = {**fields, "event_seq": seq}
+        digest = event_hash(self.chain_key, event, prev)
+        event_id = uuid4()
+        occurred_at = event["occurred_at"]
+        retention_expires_at = occurred_at + timedelta(days=90)
 
-            row = {
-                "event_id": event_id,
-                **event,
-                "prev_event_hash": prev,
-                "event_hash": digest,
-                "retention_expires_at": retention_expires_at,
-            }
-            self.rows.append(row)
-            return event_id, seq
+        row = {
+            "event_id": event_id,
+            **event,
+            "prev_event_hash": prev,
+            "event_hash": digest,
+            "retention_expires_at": retention_expires_at,
+        }
+        self.rows.append(row)
+        return event_id, seq
 
     def forget(self, session_id: str) -> None:
         self.forgotten.append(session_id)
