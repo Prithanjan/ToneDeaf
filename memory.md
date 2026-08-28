@@ -1876,11 +1876,11 @@ For a cold pickup. Ordered by what unblocks the most.
 ## 17. AWS Cloud Infrastructure Deployment & Telephony Far-End Audio Bridge (2026-08-28)
 
 1. **AWS Cloud Infrastructure Deployed**:
-   - Stacks deployed to AWS account `075213340955` in `ap-south-1` & `us-east-1`:
+   - Stacks deployed to AWS account `<ACCOUNT_ID>` in `ap-south-1` & `us-east-1`:
      - `NetworkStack`: VPC, public/private subnets, Security Groups.
      - `DataStack`: PostgreSQL RDS database & migration role.
      - `SecretsStack`: Secrets Manager ARNs (`sih26104/audit-chain-key`, `sih26104/database-url`, `sih26104/hmac-key`, `sih26104/ticket-signing-key`).
-     - `CostSafetyStack`: Target us-east-1 SNS topic (`arn:aws:sns:us-east-1:075213340955:sih26104-budget-alarm`) & `sih26104-runtime-stopper` Lambda function.
+     - `CostSafetyStack`: Target us-east-1 SNS topic (`arn:aws:sns:us-east-1:<ACCOUNT_ID>:sih26104-budget-alarm`) & `sih26104-runtime-stopper` Lambda function.
      - `ComputeStack`: ECS Cluster `sih26104`, internal Gateway ALB (`internal-Comput-Gatew-i8ICuTmoGxj5-1577789454.ap-south-1.elb.amazonaws.com`), and Service Discovery (`scorer.sih26104.local:50051`).
    - *Note on EdgeStack*: `EdgeStack` CloudFront creation returned AWS verification requirement 403 on unverified new account. Control plane operates directly over Gateway ALB / Docker edge proxy as verified in Section 15 without CloudFront dependency.
 
