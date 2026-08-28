@@ -56,8 +56,14 @@ def pytest_configure(config: pytest.Config) -> None:
     behaves the same whether the suite is invoked from the repo root or from ``audit/``.
     """
     for marker, description in (
-        ("integration", "needs PostgreSQL; skipped unless AUDIT_TEST_DATABASE_URL is set"),
-        ("privacy", "asserts a privacy control; failure is a RELEASE blocker (rules.md R-14..R-19)"),
+        (
+            "integration",
+            "needs PostgreSQL; skipped unless AUDIT_TEST_DATABASE_URL is set",
+        ),
+        (
+            "privacy",
+            "asserts a privacy control; failure is a RELEASE blocker (rules.md R-14..R-19)",
+        ),
         ("contract", "asserts agreement with contracts/; Phase 1 exit criteria"),
         ("parity", "asserts a parity-set property; failure is a DEPLOY blocker"),
     ):
@@ -72,7 +78,9 @@ def _load_module(path: Path, name: str) -> ModuleType:
     actually run, not a copy of it.
     """
     spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:  # pragma: no cover - a missing file is the assertion
+    if (
+        spec is None or spec.loader is None
+    ):  # pragma: no cover - a missing file is the assertion
         raise ImportError(f"cannot load {name} from {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module

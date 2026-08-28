@@ -81,9 +81,15 @@ CLIENT_CALL_REF_ALLOWED_FILES: tuple[str, ...] = (
 )
 
 #: Sinks that mean "this value has left the process boundary".
-_LOGGING_METHODS = frozenset({"debug", "info", "warning", "warn", "error", "exception", "critical", "log"})
-_DB_METHODS = frozenset({"execute", "executemany", "fetch", "fetchrow", "fetchval", "fetchall", "fetchone"})
-_OBJECT_STORE_METHODS = frozenset({"put_object", "upload_file", "upload_fileobj", "write_object"})
+_LOGGING_METHODS = frozenset(
+    {"debug", "info", "warning", "warn", "error", "exception", "critical", "log"}
+)
+_DB_METHODS = frozenset(
+    {"execute", "executemany", "fetch", "fetchrow", "fetchval", "fetchall", "fetchone"}
+)
+_OBJECT_STORE_METHODS = frozenset(
+    {"put_object", "upload_file", "upload_fileobj", "write_object"}
+)
 _AUDIO_WRITERS = frozenset(
     {
         "wave.open",
@@ -110,17 +116,26 @@ _AUDIO_NAME = re.compile(
 
 #: Audio container/raw extensions. Checked separately from the name regex because an extension carries
 #: the intent on its own: nobody writes a ``.flac`` for a non-audio reason.
-_AUDIO_EXT = re.compile(r"\.(?:wav|flac|pcm|raw|opus|ogg|mp3|m4a|aac|sph|au)\b", re.IGNORECASE)
+_AUDIO_EXT = re.compile(
+    r"\.(?:wav|flac|pcm|raw|opus|ogg|mp3|m4a|aac|sph|au)\b", re.IGNORECASE
+)
 
 
 def _looks_like_audio(text: str) -> bool:
     return bool(_AUDIO_NAME.search(text) or _AUDIO_EXT.search(text))
 
+
 #: Write-ish file modes. ``open(path)`` defaults to read and is not a persistence risk.
 _WRITE_MODE = re.compile(r"[wax+]")
 
-_SQL_WRITE = re.compile(r"\b(?:create\s+table|alter\s+table|add\s+column|insert\s+into|select)\b", re.IGNORECASE)
-_SQL_COLUMN_DECL = re.compile(r"^\s*[\"`]?(?P<name>[a-z_][a-z0-9_]*)[\"`]?\s+(?P<type>[a-z0-9_\[\]() ]+)", re.IGNORECASE)
+_SQL_WRITE = re.compile(
+    r"\b(?:create\s+table|alter\s+table|add\s+column|insert\s+into|select)\b",
+    re.IGNORECASE,
+)
+_SQL_COLUMN_DECL = re.compile(
+    r"^\s*[\"`]?(?P<name>[a-z_][a-z0-9_]*)[\"`]?\s+(?P<type>[a-z0-9_\[\]() ]+)",
+    re.IGNORECASE,
+)
 
 #: SCREAMING_SNAKE_CASE — a module constant by convention, therefore not caller input.
 _SCREAMING = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -200,7 +215,11 @@ class Vocabulary:
 
     @property
     def safe_interpolation_names(self) -> frozenset[str]:
-        return frozenset(self.log_allowed_keys) | _SAFE_INTERPOLATION_EXTRA | set(self.chain_fields)
+        return (
+            frozenset(self.log_allowed_keys)
+            | _SAFE_INTERPOLATION_EXTRA
+            | set(self.chain_fields)
+        )
 
 
 @dataclass
@@ -374,7 +393,9 @@ def _is_constant_tree(node: ast.expr, consts: frozenset[str] = frozenset()) -> b
         return all(_is_constant_tree(e, consts) for e in node.elts)
     if isinstance(node, ast.Dict):
         return all(
-            k is not None and _is_constant_tree(k, consts) and _is_constant_tree(v, consts)
+            k is not None
+            and _is_constant_tree(k, consts)
+            and _is_constant_tree(v, consts)
             for k, v in zip(node.keys, node.values)
         )
     if isinstance(node, ast.Subscript):
@@ -384,12 +405,17 @@ def _is_constant_tree(node: ast.expr, consts: frozenset[str] = frozenset()) -> b
         if target in _VALUE_ERASING_CALLS:
             return True
         # `SOME_MAP.get(key, default)` — the mapping is constant, so every possible result is.
-        if isinstance(node.func, ast.Attribute) and node.func.attr in {"get", "setdefault"}:
+        if isinstance(node.func, ast.Attribute) and node.func.attr in {
+            "get",
+            "setdefault",
+        }:
             return _is_constant_tree(node.func.value, consts)
     if isinstance(node, ast.BoolOp):
         return all(_is_constant_tree(v, consts) for v in node.values)
     if isinstance(node, ast.IfExp):
-        return _is_constant_tree(node.body, consts) and _is_constant_tree(node.orelse, consts)
+        return _is_constant_tree(node.body, consts) and _is_constant_tree(
+            node.orelse, consts
+        )
     return False
 
 
@@ -405,7 +431,13 @@ def _module_constants(tree: ast.Module) -> frozenset[str]:
         else:
             continue
         inner = value
-        if isinstance(inner, ast.Call) and _dotted(inner.func) in {"frozenset", "set", "tuple", "list", "dict"}:
+        if isinstance(inner, ast.Call) and _dotted(inner.func) in {
+            "frozenset",
+            "set",
+            "tuple",
+            "list",
+            "dict",
+        }:
             inner = inner.args[0] if inner.args else ast.Constant(value=None)
         if _is_constant_tree(inner, frozenset(out)):
             out.update(t.id for t in targets if isinstance(t, ast.Name))
@@ -424,7 +456,10 @@ def _interpolated_names(node: ast.expr) -> set[str]:
     for child in ast.walk(node):
         if isinstance(child, ast.FormattedValue):
             inner = child.value
-            if isinstance(inner, ast.Call) and _dotted(inner.func) in _VALUE_ERASING_CALLS:
+            if (
+                isinstance(inner, ast.Call)
+                and _dotted(inner.func) in _VALUE_ERASING_CALLS
+            ):
                 continue
             names |= {n for n in _names_in(inner) if not _SCREAMING.match(n)}
     return names
@@ -448,7 +483,10 @@ def _check_audio_persistence(tree: ast.AST, rel: str, src: str, report: Report) 
             continue
         target = _dotted(node.func)
 
-        if target in _AUDIO_WRITERS or target.split(".")[-1] in {"write_wav", "save_audio"}:
+        if target in _AUDIO_WRITERS or target.split(".")[-1] in {
+            "write_wav",
+            "save_audio",
+        }:
             report.add(
                 Finding(
                     "P-01",
@@ -480,12 +518,23 @@ def _check_audio_persistence(tree: ast.AST, rel: str, src: str, report: Report) 
                 )
             continue
 
-        if target in {"open", "io.open", "pathlib.Path.open", "aiofiles.open"} or target.endswith(".open"):
+        if target in {
+            "open",
+            "io.open",
+            "pathlib.Path.open",
+            "aiofiles.open",
+        } or target.endswith(".open"):
             mode = _open_mode(node)
             if mode is None or not _WRITE_MODE.search(mode):
                 continue
-            referenced = " ".join(sorted(_names_in(node))) + " " + " ".join(
-                str(c.value) for c in ast.walk(node) if isinstance(c, ast.Constant) and isinstance(c.value, str)
+            referenced = (
+                " ".join(sorted(_names_in(node)))
+                + " "
+                + " ".join(
+                    str(c.value)
+                    for c in ast.walk(node)
+                    if isinstance(c, ast.Constant) and isinstance(c.value, str)
+                )
             )
             if _looks_like_audio(referenced):
                 report.add(
@@ -509,7 +558,10 @@ def _check_audio_persistence(tree: ast.AST, rel: str, src: str, report: Report) 
         parts = _dotted(node.func).split(".")
         if len(parts) < 2 or parts[-1] not in _LOGGING_METHODS:
             continue
-        if not any(p in {"log", "logger", "_log", "logging"} or p.startswith("_log") for p in parts[:-1]):
+        if not any(
+            p in {"log", "logger", "_log", "logging"} or p.startswith("_log")
+            for p in parts[:-1]
+        ):
             continue
         for arg in list(node.args) + [kw.value for kw in node.keywords]:
             if isinstance(arg, ast.JoinedStr):
@@ -529,10 +581,18 @@ def _check_audio_persistence(tree: ast.AST, rel: str, src: str, report: Report) 
 
 
 def _open_mode(call: ast.Call) -> str | None:
-    if len(call.args) >= 2 and isinstance(call.args[1], ast.Constant) and isinstance(call.args[1].value, str):
+    if (
+        len(call.args) >= 2
+        and isinstance(call.args[1], ast.Constant)
+        and isinstance(call.args[1].value, str)
+    ):
         return call.args[1].value
     for kw in call.keywords:
-        if kw.arg == "mode" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+        if (
+            kw.arg == "mode"
+            and isinstance(kw.value, ast.Constant)
+            and isinstance(kw.value.value, str)
+        ):
             return kw.value.value
     return "r" if call.args else None
 
@@ -541,7 +601,9 @@ def _open_mode(call: ast.Call) -> str | None:
 # P-02  raw client_call_ref
 # --------------------------------------------------------------------------------------------------
 
-_RAW_REF_NAMES = frozenset({"client_call_ref", "raw_call_ref", "caller_reference", "client_ref"})
+_RAW_REF_NAMES = frozenset(
+    {"client_call_ref", "raw_call_ref", "caller_reference", "client_ref"}
+)
 
 
 def _check_client_call_ref(tree: ast.AST, rel: str, src: str, report: Report) -> None:
@@ -549,7 +611,13 @@ def _check_client_call_ref(tree: ast.AST, rel: str, src: str, report: Report) ->
 
     if not allowed_here:
         for node in ast.walk(tree):
-            name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
+            name = (
+                node.id
+                if isinstance(node, ast.Name)
+                else node.attr
+                if isinstance(node, ast.Attribute)
+                else None
+            )
             if name in _RAW_REF_NAMES:
                 report.add(
                     Finding(
@@ -572,7 +640,10 @@ def _check_client_call_ref(tree: ast.AST, rel: str, src: str, report: Report) ->
         target = _dotted(node.func)
         leaf = target.split(".")[-1]
         sink = None
-        if leaf in _LOGGING_METHODS and any(p.startswith("_log") or p in {"log", "logger", "logging"} for p in target.split(".")[:-1]):
+        if leaf in _LOGGING_METHODS and any(
+            p.startswith("_log") or p in {"log", "logger", "logging"}
+            for p in target.split(".")[:-1]
+        ):
             sink = "a log line"
         elif leaf in _DB_METHODS:
             sink = "a database query"
@@ -601,10 +672,14 @@ def _check_client_call_ref(tree: ast.AST, rel: str, src: str, report: Report) ->
 # P-03  non-static error text (rules.md R-17)
 # --------------------------------------------------------------------------------------------------
 
-_ERROR_CONSTRUCTORS = frozenset({"HTTPException", "JSONResponse", "WebSocketException", "PlainTextResponse"})
+_ERROR_CONSTRUCTORS = frozenset(
+    {"HTTPException", "JSONResponse", "WebSocketException", "PlainTextResponse"}
+)
 
 
-def collect_raise_sites(files: Sequence[ParsedFile], vocab: Vocabulary) -> dict[str, list[RaiseSite]]:
+def collect_raise_sites(
+    files: Sequence[ParsedFile], vocab: Vocabulary
+) -> dict[str, list[RaiseSite]]:
     """Record, per exception class, whether every ``raise`` of it uses a static message.
 
     This exists to answer one question precisely, rather than to flag a shape. ``sessions.py`` returns
@@ -630,13 +705,21 @@ def collect_raise_sites(files: Sequence[ParsedFile], vocab: Vocabulary) -> dict[
             if not cls:
                 continue
             payloads = [a for a in call.args if not isinstance(a, ast.Starred)]
-            payloads += [kw.value for kw in call.keywords if kw.arg in {"detail", "message", "reason"}]
+            payloads += [
+                kw.value
+                for kw in call.keywords
+                if kw.arg in {"detail", "message", "reason"}
+            ]
             unsafe: set[str] = set()
             static = True
             for payload in payloads:
                 if _is_constant_tree(payload, parsed.constants):
                     continue
-                names = _interpolated_names(payload) if isinstance(payload, ast.JoinedStr) else _names_in(payload)
+                names = (
+                    _interpolated_names(payload)
+                    if isinstance(payload, ast.JoinedStr)
+                    else _names_in(payload)
+                )
                 bad = {n for n in names if n not in safe and n not in parsed.constants}
                 if bad or not isinstance(payload, (ast.JoinedStr, ast.Constant)):
                     static = False
@@ -649,7 +732,9 @@ def collect_raise_sites(files: Sequence[ParsedFile], vocab: Vocabulary) -> dict[
 
 def _handler_exception_names(parsed: ParsedFile, node: ast.AST) -> set[str]:
     """Exception classes bound by the ``except`` clause enclosing ``node``, if any."""
-    for handler in (n for n in ast.walk(parsed.tree) if isinstance(n, ast.ExceptHandler)):
+    for handler in (
+        n for n in ast.walk(parsed.tree) if isinstance(n, ast.ExceptHandler)
+    ):
         span = {d for d in ast.walk(handler) if d is node}
         if not span:
             continue
@@ -712,12 +797,20 @@ def _check_static_errors(
                 continue
 
             # Case 2: the payload interpolates something directly.
-            interpolated = _interpolated_names(value) if isinstance(value, ast.JoinedStr) else _names_in(value)
-            unsafe = {n for n in interpolated if n not in safe and n not in parsed.constants}
+            interpolated = (
+                _interpolated_names(value)
+                if isinstance(value, ast.JoinedStr)
+                else _names_in(value)
+            )
+            unsafe = {
+                n for n in interpolated if n not in safe and n not in parsed.constants
+            }
             if interpolated and not unsafe:
                 continue  # every spliced value is a size, an enum, or an allow-listed log field
             what = "close reason" if is_close else f"{leaf} {kw_name}"
-            detail = f" unrecognised value(s): {', '.join(sorted(unsafe))}" if unsafe else ""
+            detail = (
+                f" unrecognised value(s): {', '.join(sorted(unsafe))}" if unsafe else ""
+            )
             report.add(
                 Finding(
                     "P-03",
@@ -734,12 +827,21 @@ def _check_static_errors(
 def _forwarded_exception(node: ast.expr) -> str | None:
     """If the payload is (or contains) ``str(exc)``/``exc.args``/``repr(exc)``, return the bound name."""
     for child in ast.walk(node):
-        if isinstance(child, ast.Call) and _dotted(child.func) in {"str", "repr", "format"}:
+        if isinstance(child, ast.Call) and _dotted(child.func) in {
+            "str",
+            "repr",
+            "format",
+        }:
             for arg in child.args:
                 name = _dotted(arg)
                 if name and ("exc" in name or "err" in name or name in {"e", "ex"}):
                     return name.split(".")[0]
-        if isinstance(child, ast.Attribute) and child.attr in {"args", "detail", "msg", "message"}:
+        if isinstance(child, ast.Attribute) and child.attr in {
+            "args",
+            "detail",
+            "msg",
+            "message",
+        }:
             base = _dotted(child.value)
             if base and ("exc" in base or "err" in base):
                 return base.split(".")[0]
@@ -784,7 +886,9 @@ def _is_documented_exception(name: str, hit: str) -> bool:
     return DOCUMENTED_NAME_EXCEPTIONS.get(name.lower()) == hit
 
 
-def _check_forbidden_names_python(tree: ast.AST, rel: str, src: str, vocab: Vocabulary, report: Report) -> None:
+def _check_forbidden_names_python(
+    tree: ast.AST, rel: str, src: str, vocab: Vocabulary, report: Report
+) -> None:
     """Flag forbidden names in the two places they would become structural: a field/column collection,
     and a SQL string."""
     for node in ast.walk(tree):
@@ -794,7 +898,10 @@ def _check_forbidden_names_python(tree: ast.AST, rel: str, src: str, vocab: Voca
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             label = next((t.id for t in targets if isinstance(t, ast.Name)), "")
-            if re.search(r"(FIELDS|COLUMNS|KEYS|ALLOW|SCHEMA)", label, re.IGNORECASE) and node.value is not None:
+            if (
+                re.search(r"(FIELDS|COLUMNS|KEYS|ALLOW|SCHEMA)", label, re.IGNORECASE)
+                and node.value is not None
+            ):
                 for child in ast.walk(node.value):
                     if isinstance(child, ast.Constant) and isinstance(child.value, str):
                         hit = _forbidden_hit(child.value, vocab)
@@ -811,12 +918,18 @@ def _check_forbidden_names_python(tree: ast.AST, rel: str, src: str, vocab: Voca
                                 )
                             )
 
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and _SQL_WRITE.search(node.value):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and _SQL_WRITE.search(node.value)
+        ):
             for finding in _scan_sql_text(node.value, rel, node.lineno, vocab):
                 report.add(finding)
 
 
-def _scan_sql_text(text: str, rel: str, base_line: int, vocab: Vocabulary) -> Iterator[Finding]:
+def _scan_sql_text(
+    text: str, rel: str, base_line: int, vocab: Vocabulary
+) -> Iterator[Finding]:
     """Scan a DDL/DML blob for forbidden column names and stray ``bytea`` columns."""
     for offset, raw_line in enumerate(text.splitlines()):
         line = raw_line.strip().rstrip(",")
@@ -826,7 +939,18 @@ def _scan_sql_text(text: str, rel: str, base_line: int, vocab: Vocabulary) -> It
         if match is None:
             continue
         name, coltype = match.group("name"), match.group("type").lower()
-        if name.lower() in {"create", "alter", "add", "insert", "select", "primary", "unique", "constraint", "check", "foreign"}:
+        if name.lower() in {
+            "create",
+            "alter",
+            "add",
+            "insert",
+            "select",
+            "primary",
+            "unique",
+            "constraint",
+            "check",
+            "foreign",
+        }:
             continue
         hit = _forbidden_hit(name, vocab)
         if hit:
@@ -863,7 +987,9 @@ def _check_openapi(repo: Path, vocab: Vocabulary, report: Report) -> None:
         return
     report.scanned.append("contracts/openapi.yaml")
     prop_line = re.compile(r"^\s{2,}(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*:\s*(?:$|\{|\|)")
-    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for lineno, line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         match = prop_line.match(line)
         if match is None:
             continue
@@ -919,7 +1045,9 @@ def _python_files(repo: Path, roots: Iterable[str]) -> Iterator[Path]:
         if not base.exists():
             continue
         for path in sorted(base.rglob("*.py")):
-            if "__pycache__" in path.parts or any(p in {"tests", "test"} for p in path.parts):
+            if "__pycache__" in path.parts or any(
+                p in {"tests", "test"} for p in path.parts
+            ):
                 continue
             yield path
 
@@ -930,7 +1058,9 @@ def scan(repo: Path, roots: Sequence[str]) -> Report:
 
     for root in roots:
         if not (repo / root).exists():
-            report.skipped.append(f"{root}/ (absent — owned by another pair, not yet landed)")
+            report.skipped.append(
+                f"{root}/ (absent — owned by another pair, not yet landed)"
+            )
 
     # Pass 1: parse everything. Two checks need whole-repo knowledge before either can run — the
     # exception-forwarding check in P-03 has to know how a class is raised in *another* file before it
@@ -945,8 +1075,12 @@ def scan(repo: Path, roots: Sequence[str]) -> Report:
         except SyntaxError as exc:
             # Exit 2, not a finding: an unparsed file is an unscanned file, and an unscanned file
             # reported as clean is the failure this whole tool exists to avoid.
-            _die(f"{rel}:{exc.lineno}: cannot parse ({exc.msg}); the scan is incomplete")
-        parsed_files.append(ParsedFile(rel=rel, src=src, tree=tree, constants=_module_constants(tree)))
+            _die(
+                f"{rel}:{exc.lineno}: cannot parse ({exc.msg}); the scan is incomplete"
+            )
+        parsed_files.append(
+            ParsedFile(rel=rel, src=src, tree=tree, constants=_module_constants(tree))
+        )
 
     raise_sites = collect_raise_sites(parsed_files, vocab)
 
@@ -956,7 +1090,9 @@ def scan(repo: Path, roots: Sequence[str]) -> Report:
         _check_audio_persistence(parsed.tree, parsed.rel, parsed.src, report)
         _check_client_call_ref(parsed.tree, parsed.rel, parsed.src, report)
         _check_static_errors(parsed, vocab, raise_sites, report)
-        _check_forbidden_names_python(parsed.tree, parsed.rel, parsed.src, vocab, report)
+        _check_forbidden_names_python(
+            parsed.tree, parsed.rel, parsed.src, vocab, report
+        )
 
     sql_seen = 0
     for pattern in SQL_GLOBS:
@@ -976,7 +1112,9 @@ def scan(repo: Path, roots: Sequence[str]) -> Report:
         # rules.md R-52: say what was not covered. The audit DDL is Pair C's Phase-1 deliverable; until
         # it lands, the structural deny-list is asserted by audit/tests against information_schema and
         # NOT by this scan.
-        report.skipped.append("SQL / Alembic migrations (none found — deny-list unverified by this scan)")
+        report.skipped.append(
+            "SQL / Alembic migrations (none found — deny-list unverified by this scan)"
+        )
 
     _check_openapi(repo, vocab, report)
     _check_log_allowlist(vocab, report)
@@ -1024,10 +1162,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Static privacy scan for the SIH26104 privacy boundary (rules.md R-14..R-19).",
         epilog="Exit 0 clean, 1 findings, 2 the scan could not run.",
     )
-    parser.add_argument("--repo", type=Path, default=REPO_ROOT, help="repository root (default: inferred)")
-    parser.add_argument("--root", action="append", dest="roots", default=None, help="extra tree to scan")
+    parser.add_argument(
+        "--repo",
+        type=Path,
+        default=REPO_ROOT,
+        help="repository root (default: inferred)",
+    )
+    parser.add_argument(
+        "--root", action="append", dest="roots", default=None, help="extra tree to scan"
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
-    parser.add_argument("--list-rules", action="store_true", help="print the rule table and exit")
+    parser.add_argument(
+        "--list-rules", action="store_true", help="print the rule table and exit"
+    )
     args = parser.parse_args(argv)
 
     if args.list_rules:
@@ -1053,23 +1200,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1 if report.findings else 0
 
-    print(f"privacy_scan: {len(report.scanned)} file(s) scanned; vocabulary read by {report.vocabulary_source}")
+    print(
+        f"privacy_scan: {len(report.scanned)} file(s) scanned; vocabulary read by {report.vocabulary_source}"
+    )
     for note in report.skipped:
         print(f"  NOT SCANNED: {note}")
 
     if not report.findings:
         print("privacy_scan: PASS — no static privacy-boundary violations found.")
-        print("  This is a static scan. Runtime redaction is asserted by the `privacy` marker suite.")
+        print(
+            "  This is a static scan. Runtime redaction is asserted by the `privacy` marker suite."
+        )
         return 0
 
     print("")
     print("=" * 98)
-    print("privacy_scan: FAIL — RELEASE BLOCKER. A privacy-boundary finding is not a style comment.")
+    print(
+        "privacy_scan: FAIL — RELEASE BLOCKER. A privacy-boundary finding is not a style comment."
+    )
     print("=" * 98)
     for finding in report.findings:
         print(f"  {finding.render()}")
     print("")
-    print(f"{len(report.findings)} finding(s). See rules.md section C and design.md section 3.")
+    print(
+        f"{len(report.findings)} finding(s). See rules.md section C and design.md section 3."
+    )
     return 1
 
 

@@ -288,9 +288,21 @@ class TestPolicyLoader:
 
         from app.policy.loader import load_policy
 
+        repo_root = Path(__file__).resolve().parents[2]
+        policy_path = (
+            Path("policy/policy.yaml")
+            if Path("policy/policy.yaml").exists()
+            else repo_root / "policy" / "policy.yaml"
+        )
+        cal_path = (
+            Path("policy/calibration.json")
+            if Path("policy/calibration.json").exists()
+            else repo_root / "policy" / "calibration.json"
+        )
+
         policy = load_policy(
-            Path("policy/policy.yaml"),
-            calibration_path=Path("policy/calibration.json"),
+            policy_path,
+            calibration_path=cal_path,
         )
         assert policy.version == "0.1.0"
         assert policy.thresholds.high_window_risk == 0.78
@@ -304,7 +316,19 @@ class TestPolicyLoader:
 
         from app.policy.loader import PolicyLoadError, load_policy
 
-        policy_bytes = Path("policy/policy.yaml").read_bytes()
+        repo_root = Path(__file__).resolve().parents[2]
+        policy_path = (
+            Path("policy/policy.yaml")
+            if Path("policy/policy.yaml").exists()
+            else repo_root / "policy" / "policy.yaml"
+        )
+        cal_path = (
+            Path("policy/calibration.json")
+            if Path("policy/calibration.json").exists()
+            else repo_root / "policy" / "calibration.json"
+        )
+
+        policy_bytes = policy_path.read_bytes()
         raw = yaml.safe_load(policy_bytes)
         del raw["model_version"]
 
@@ -312,7 +336,7 @@ class TestPolicyLoader:
         bad_policy.write_text(yaml.dump(raw), encoding="utf-8")
 
         with pytest.raises(PolicyLoadError, match="policy bundle missing model_version"):
-            load_policy(bad_policy, calibration_path=Path("policy/calibration.json"))
+            load_policy(bad_policy, calibration_path=cal_path)
 
     def test_fails_closed_when_model_version_mismatches(self, tmp_path: Path) -> None:
         from pathlib import Path
@@ -321,7 +345,19 @@ class TestPolicyLoader:
 
         from app.policy.loader import PolicyLoadError, load_policy
 
-        policy_bytes = Path("policy/policy.yaml").read_bytes()
+        repo_root = Path(__file__).resolve().parents[2]
+        policy_path = (
+            Path("policy/policy.yaml")
+            if Path("policy/policy.yaml").exists()
+            else repo_root / "policy" / "policy.yaml"
+        )
+        cal_path = (
+            Path("policy/calibration.json")
+            if Path("policy/calibration.json").exists()
+            else repo_root / "policy" / "calibration.json"
+        )
+
+        policy_bytes = policy_path.read_bytes()
         raw = yaml.safe_load(policy_bytes)
         raw["model_version"] = "wrong-model-version-999"
 
@@ -329,4 +365,4 @@ class TestPolicyLoader:
         bad_policy.write_text(yaml.dump(raw), encoding="utf-8")
 
         with pytest.raises(PolicyLoadError, match="does not match the calibration artifact"):
-            load_policy(bad_policy, calibration_path=Path("policy/calibration.json"))
+            load_policy(bad_policy, calibration_path=cal_path)

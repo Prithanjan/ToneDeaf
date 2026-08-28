@@ -60,8 +60,8 @@ Encode/decode:
 
 ```python
 # Python (gateway) — struct format
-SEQ_STRUCT = ">Q"                      # uint64 big-endian
-PCM_DTYPE  = "<i2"                     # int16 little-endian
+SEQ_STRUCT = ">Q"  # uint64 big-endian
+PCM_DTYPE = "<i2"  # int16 little-endian
 seq = struct.unpack_from(">Q", frame, 0)[0]
 pcm = np.frombuffer(frame, dtype="<i2", offset=8, count=320)
 ```

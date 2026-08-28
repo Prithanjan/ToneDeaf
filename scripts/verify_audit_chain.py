@@ -55,9 +55,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "gateway"))
 
 try:
-    from app.audit.chain import CHAIN_FIELDS, ChainFieldError, VerificationResult, verify_chain
+    from app.audit.chain import (
+        CHAIN_FIELDS,
+        ChainFieldError,
+        VerificationResult,
+        verify_chain,
+    )
     from app.constants import CHAIN_FIELD_SET_VERSION, GENESIS_PREV_HASH
-except ImportError as exc:  # pragma: no cover - environment problem, not a chain problem
+except (
+    ImportError
+) as exc:  # pragma: no cover - environment problem, not a chain problem
     print(
         f"verify_audit_chain: FATAL: cannot import the chain implementation ({exc}).\n"
         "Run from the repository root. This tool deliberately has no fallback: a second "
@@ -143,7 +150,9 @@ def _normalize_event(row: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
-def _group_by_session(rows: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def _group_by_session(
+    rows: Iterable[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
     """Group rows by session and order each group by ``event_seq``.
 
     Sorting here rather than trusting the input order matters for the file path: a hand-edited or
@@ -213,7 +222,9 @@ def _rows_from_file(path: Path) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------------------------------
 
 
-def verify_rows(chain_key: bytes, rows: Sequence[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
+def verify_rows(
+    chain_key: bytes, rows: Sequence[dict[str, Any]]
+) -> tuple[int, list[dict[str, Any]]]:
     """Verify every session's chain. Returns ``(exit_code, per_session_results)``."""
     grouped = _group_by_session(rows)
     results: list[dict[str, Any]] = []
@@ -236,7 +247,9 @@ def verify_rows(chain_key: bytes, rows: Sequence[dict[str, Any]]) -> tuple[int, 
             continue
 
         try:
-            outcome: VerificationResult = verify_chain(chain_key, events, genesis=GENESIS_PREV_HASH)
+            outcome: VerificationResult = verify_chain(
+                chain_key, events, genesis=GENESIS_PREV_HASH
+            )
         except ChainFieldError as exc:
             # canonicalize() refused the row: a missing, extra, or forbidden field. That is a schema
             # or migration problem, not necessarily tampering, and saying so is the difference
@@ -318,12 +331,18 @@ def self_test() -> int:
 
     code, results = verify_rows(key, events)
     if code != 0 or not results[0]["ok"]:
-        print(f"self-test FAILED: a freshly built chain did not verify: {results}", file=sys.stderr)
+        print(
+            f"self-test FAILED: a freshly built chain did not verify: {results}",
+            file=sys.stderr,
+        )
         return 2
     print("self-test 1/3 ok: a well-formed 5-event chain verifies")
 
     tampered = [dict(e) for e in events]
-    tampered[2] = {**tampered[2], "action": "escalate"}  # the alteration that would matter most
+    tampered[2] = {
+        **tampered[2],
+        "action": "escalate",
+    }  # the alteration that would matter most
     code, results = verify_rows(key, tampered)
     if code != 1 or results[0]["first_bad_event_seq"] != 2:
         print(
@@ -334,13 +353,20 @@ def self_test() -> int:
     print("self-test 2/3 ok: an altered `action` is localized to event_seq=2")
 
     truncated = [dict(e) for e in events]
-    del truncated[3]  # a deleted row must surface as a prev_event_hash break at the NEXT row
+    del truncated[
+        3
+    ]  # a deleted row must surface as a prev_event_hash break at the NEXT row
     code, results = verify_rows(key, truncated)
     if code != 1 or results[0]["first_bad_event_seq"] != 4:
-        print(f"self-test FAILED: a deleted row was not detected: {results}", file=sys.stderr)
+        print(
+            f"self-test FAILED: a deleted row was not detected: {results}",
+            file=sys.stderr,
+        )
         return 2
     print("self-test 3/3 ok: a deleted event_seq=3 surfaces as a break at event_seq=4")
-    print("self-test PASSED — the verifier detects alteration and deletion, and localizes both.")
+    print(
+        "self-test PASSED — the verifier detects alteration and deletion, and localizes both."
+    )
     return 0
 
 
@@ -353,7 +379,9 @@ def _render(results: Sequence[dict[str, Any]], *, key_source: str) -> None:
     ok = [r for r in results if r["ok"]]
     bad = [r for r in results if not r["ok"]]
 
-    print(f"audit chain verification — chain_field_set={CHAIN_FIELD_SET_VERSION}, key from {key_source}")
+    print(
+        f"audit chain verification — chain_field_set={CHAIN_FIELD_SET_VERSION}, key from {key_source}"
+    )
     print(f"  sessions verified : {len(ok)}")
     print(f"  sessions failing  : {len(bad)}")
     print(f"  events examined   : {sum(r['events'] for r in results)}")
@@ -365,7 +393,9 @@ def _render(results: Sequence[dict[str, Any]], *, key_source: str) -> None:
 
     if not bad:
         print("")
-        print("  RESULT: every session's chain recomputes from genesis. Tamper-evident.")
+        print(
+            "  RESULT: every session's chain recomputes from genesis. Tamper-evident."
+        )
         return
 
     print("")
@@ -378,13 +408,21 @@ def _render(results: Sequence[dict[str, Any]], *, key_source: str) -> None:
         print(f"  session {row['session_id']}  FIRST DIVERGENCE AT {where}")
         print(f"      {row['detail']}")
         if seq is not None and seq > 0:
-            print(f"      events 0..{seq - 1} in this session still recompute correctly.")
+            print(
+                f"      events 0..{seq - 1} in this session still recompute correctly."
+            )
     print("")
     print("  Before declaring tampering, rule out the two benign causes:")
-    print("    1. AUDIT_CHAIN_KEY differs from the key that wrote the rows (rules.md R-58). A wrong")
-    print("       key fails EVERY session at its first event — that pattern means the key, not an")
+    print(
+        "    1. AUDIT_CHAIN_KEY differs from the key that wrote the rows (rules.md R-58). A wrong"
+    )
+    print(
+        "       key fails EVERY session at its first event — that pattern means the key, not an"
+    )
     print("       attacker.")
-    print("    2. The hash-chain field set changed without a documented re-anchor (rules.md R-27).")
+    print(
+        "    2. The hash-chain field set changed without a documented re-anchor (rules.md R-27)."
+    )
     print("       Compare the migration head against CHAIN_FIELD_SET_VERSION above.")
 
 
@@ -412,8 +450,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--dsn", help="PostgreSQL DSN; defaults to $DATABASE_URL")
-    source.add_argument("--events-file", type=Path, help="JSON array of exported audit rows")
-    source.add_argument("--self-test", action="store_true", help="prove the verifier detects tampering")
+    source.add_argument(
+        "--events-file", type=Path, help="JSON array of exported audit rows"
+    )
+    source.add_argument(
+        "--self-test", action="store_true", help="prove the verifier detects tampering"
+    )
     parser.add_argument("--session", help="verify one session_id only")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)

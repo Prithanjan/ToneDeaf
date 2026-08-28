@@ -136,17 +136,25 @@ class TestThresholdIsMarkedAsAPlaceholder:
     def test_the_placeholder_marking_sits_with_the_number_not_in_a_readme(self) -> None:
         """A caveat in a separate document is one the next person does not read. The declaration and
         the disclaimer have to be visible in the same screenful."""
-        assert abs(line_number_of(r"^\s*high_window_risk:") - line_number_of(r"^\s*derivation: placeholder")) <= 10
+        assert (
+            abs(
+                line_number_of(r"^\s*high_window_risk:")
+                - line_number_of(r"^\s*derivation: placeholder")
+            )
+            <= 10
+        )
 
     def test_the_file_itself_says_the_number_is_not_measured(self) -> None:
         text = POLICY_YAML.read_text(encoding="utf-8")
         assert "0.78 IS A PLACEHOLDER" in text
         assert "NOT A MEASURED VALUE" in text.upper()
         for rule in ("R-01", "R-02", "R-03", "R-04"):
-            assert rule in text, f"the honesty rules are not cited next to the number: {rule}"
+            assert rule in text, (
+                f"the honesty rules are not cited next to the number: {rule}"
+            )
 
     def test_the_file_says_what_would_make_it_real(self) -> None:
-        """"This is a placeholder" with no exit criteria is how a placeholder becomes permanent."""
+        """ "This is a placeholder" with no exit criteria is how a placeholder becomes permanent."""
         text = POLICY_YAML.read_text(encoding="utf-8")
         assert "cost" in text.lower() and "matrix" in text.lower()
         assert "dev_calibration" in text
@@ -155,13 +163,25 @@ class TestThresholdIsMarkedAsAPlaceholder:
         """The vocabulary that turns a placeholder into a claim. Searched over the whole file including
         comments, because a comment saying "tuned on our data" is exactly as quotable as a value."""
         text = POLICY_YAML.read_text(encoding="utf-8").lower()
-        for claim in ("tuned to", "validated at", "optimal threshold", "measured at", "eer of"):
-            assert claim not in text, f"the bundle claims the threshold was derived: {claim!r}"
+        for claim in (
+            "tuned to",
+            "validated at",
+            "optimal threshold",
+            "measured at",
+            "eer of",
+        ):
+            assert claim not in text, (
+                f"the bundle claims the threshold was derived: {claim!r}"
+            )
 
     def test_the_threshold_is_inside_the_open_interval(self) -> None:
         """``PolicyThresholds`` rejects 0 and 1: a threshold of 0 makes every window high and 1 makes
         none, and both would present as a working demo with a broken detector."""
-        PolicyThresholds(high_window_risk=float(scalar("high_window_risk")), evidence_k=3, evidence_n=5)
+        PolicyThresholds(
+            high_window_risk=float(scalar("high_window_risk")),
+            evidence_k=3,
+            evidence_n=5,
+        )
         with pytest.raises(ValueError, match=r"high_window_risk must be in \(0, 1\)"):
             PolicyThresholds(high_window_risk=1.0, evidence_k=3, evidence_n=5)
 
@@ -188,7 +208,9 @@ class TestEvidenceBar:
         assert thresholds.evidence_k >= 2
         assert thresholds.evidence_n >= thresholds.evidence_k
 
-    def test_the_bundle_explains_that_the_window_counts_eligible_windows_only(self) -> None:
+    def test_the_bundle_explains_that_the_window_counts_eligible_windows_only(
+        self,
+    ) -> None:
         """R-09. The difference between "last five windows" and "last five eligible windows" is the
         difference between a system an attacker can dilute with a bad line and one they cannot."""
         text = POLICY_YAML.read_text(encoding="utf-8")
@@ -205,19 +227,29 @@ class TestActionVocabularyIsClosed:
     """R-07, at the third of the three definition sites: engine enum, database CHECK, and this file."""
 
     def test_every_configured_action_is_a_real_enum_member(self) -> None:
-        configured = {action for states in purpose_actions().values() for action in states.values()}
-        assert configured <= {a.value for a in Action}, configured - {a.value for a in Action}
+        configured = {
+            action
+            for states in purpose_actions().values()
+            for action in states.values()
+        }
+        assert configured <= {a.value for a in Action}, configured - {
+            a.value for a in Action
+        }
 
     def test_the_enum_the_engine_exposes_matches_the_database_vocabulary(self) -> None:
         assert tuple(a.value for a in Action) == sc.ACTION_VOCABULARY
 
     @pytest.mark.privacy
     @pytest.mark.parametrize("banned", sc.FORBIDDEN_ACTION_VALUES)
-    def test_no_authorization_verb_appears_as_a_configured_value(self, banned: str) -> None:
+    def test_no_authorization_verb_appears_as_a_configured_value(
+        self, banned: str
+    ) -> None:
         """Comments are stripped first: the bundle names these words in prose to forbid them, and the
         explanation must not be the thing that fails the test."""
         for number, line in enumerate(strip_comments(yaml_lines()), start=1):
-            assert not re.search(rf"[:\-]\s*{banned}\s*$", line), f"policy.yaml:{number}: {line!r}"
+            assert not re.search(rf"[:\-]\s*{banned}\s*$", line), (
+                f"policy.yaml:{number}: {line!r}"
+            )
 
     def test_the_bundle_states_that_the_vocabulary_is_closed(self) -> None:
         text = POLICY_YAML.read_text(encoding="utf-8")
@@ -247,15 +279,21 @@ class TestPurposeActionMap:
         same defect as setting ``k: 1`` and is invisible in the threshold.
         """
         for purpose, mapping in purpose_actions().items():
-            assert mapping["collecting"] == "continue", f"{purpose} acts before the evidence bar"
+            assert mapping["collecting"] == "continue", (
+                f"{purpose} acts before the evidence bar"
+            )
 
     def test_high_is_never_ignored(self) -> None:
         """The other end of the same argument. If any purpose mapped ``high`` to ``continue``, the
         evidence bar could be met and nothing would happen — a detector wired to nothing."""
         for purpose, mapping in purpose_actions().items():
-            assert mapping["high"] != "continue", f"{purpose} ignores a met evidence bar"
+            assert mapping["high"] != "continue", (
+                f"{purpose} ignores a met evidence bar"
+            )
 
-    def test_the_same_evidence_produces_different_actions_for_different_purposes(self) -> None:
+    def test_the_same_evidence_produces_different_actions_for_different_purposes(
+        self,
+    ) -> None:
         """R-05/R-06, and the reason this is a map rather than a global threshold. Identical evidence
         must be able to produce a different response depending on what is at stake, or the system
         either over-reacts to a balance query or under-reacts to an account takeover."""
@@ -284,7 +322,9 @@ class TestStickyHighIsDocumentedNotConfigurable:
         """A ``true`` in a config file implies a ``false`` exists, and somebody eventually sets it. The
         values are file-and-symbol references so there is no switch to flip."""
         block = re.search(
-            r"^enforced_invariants:\n(.*?)(?=^\w)", POLICY_YAML.read_text(encoding="utf-8"), re.M | re.S
+            r"^enforced_invariants:\n(.*?)(?=^\w)",
+            POLICY_YAML.read_text(encoding="utf-8"),
+            re.M | re.S,
         )
         assert block, "policy.yaml has no enforced_invariants block"
         entries = re.findall(r"^\s{2}(\w+):\s*\"([^\"]+)\"", block.group(1), re.M)
@@ -303,9 +343,9 @@ class TestStickyHighIsDocumentedNotConfigurable:
             path = REPO_ROOT / relative_path
             assert path.is_file(), f"{relative_path} does not exist"
             leaf = symbol.split(".")[-1]
-            assert re.search(rf"\b(class|def)\s+{leaf}\b", path.read_text(encoding="utf-8")), (
-                f"{relative_path} does not define {leaf}"
-            )
+            assert re.search(
+                rf"\b(class|def)\s+{leaf}\b", path.read_text(encoding="utf-8")
+            ), f"{relative_path} does not define {leaf}"
 
     def test_sticky_high_is_cited_with_its_rule_id(self) -> None:
         text = POLICY_YAML.read_text(encoding="utf-8")
@@ -315,7 +355,9 @@ class TestStickyHighIsDocumentedNotConfigurable:
 
 class TestBundleIdentityAndHashDiscipline:
     def test_the_bundle_declares_a_version(self) -> None:
-        assert re.match(sc.VERSION_REGEX, scalar("policy_version")), scalar("policy_version")
+        assert re.match(sc.VERSION_REGEX, scalar("policy_version")), scalar(
+            "policy_version"
+        )
 
     def test_the_version_fits_the_audit_column_constraint(self) -> None:
         """It is written into every audit row as ``policy_version`` and the CHECK bounds its shape. A
@@ -328,7 +370,9 @@ class TestBundleIdentityAndHashDiscipline:
         the moment it is written. A stale digest is worse than none — it invites a comparison that
         always fails, and the fix people reach for is disabling the comparison."""
         for line in strip_comments(yaml_lines()):
-            assert not re.match(r"\s*\w*sha256\w*:", line), f"self-referential digest field: {line!r}"
+            assert not re.match(r"\s*\w*sha256\w*:", line), (
+                f"self-referential digest field: {line!r}"
+            )
 
     def test_the_file_explains_that_its_bytes_are_the_canonical_form(self) -> None:
         """The loader hashes raw bytes, so a reformat is a policy change in the audit trail. Somebody
@@ -462,7 +506,9 @@ class TestCalibrationSplitDiscipline:
     def test_the_artifact_explains_why_and_cites_the_rule(self) -> None:
         text = CALIBRATION_JSON.read_text(encoding="utf-8")
         assert "R-37" in text
-        assert "R-38" in text, "the grouping-before-augmentation requirement is not mentioned"
+        assert "R-38" in text, (
+            "the grouping-before-augmentation requirement is not mentioned"
+        )
 
     def test_promotion_requires_more_than_editing_the_status(self) -> None:
         """A checklist in the file, in order, so "make it policy_eligible" cannot be a one-line diff
@@ -496,7 +542,9 @@ class TestTheRealLoaderAcceptsTheBundle:
     ``loader.py`` parses this file — only that it says what the loader is expected to want."""
 
     def loader(self):
-        pytest.importorskip("yaml", reason="PyYAML is unavailable; the loader round-trip is UNVERIFIED")
+        pytest.importorskip(
+            "yaml", reason="PyYAML is unavailable; the loader round-trip is UNVERIFIED"
+        )
         from app.policy import loader as module
 
         return module
@@ -516,7 +564,9 @@ class TestTheRealLoaderAcceptsTheBundle:
         assert bundle.allows_probability_language is False
         assert bundle.threshold_derivation == PLACEHOLDER_DERIVATION
 
-    def test_the_placeholder_status_constant_matches_this_files_transcription(self) -> None:
+    def test_the_placeholder_status_constant_matches_this_files_transcription(
+        self,
+    ) -> None:
         module = self.loader()
         assert module.PLACEHOLDER_STATUS == PLACEHOLDER_STATUS
 
@@ -524,7 +574,9 @@ class TestTheRealLoaderAcceptsTheBundle:
         module = self.loader()
         mutated = tmp_path / "policy.yaml"
         mutated.write_text(
-            POLICY_YAML.read_text(encoding="utf-8").replace("high: hold", "high: deny", 1),
+            POLICY_YAML.read_text(encoding="utf-8").replace(
+                "high: hold", "high: deny", 1
+            ),
             encoding="utf-8",
         )
         with pytest.raises(module.PolicyLoadError, match="not a valid action"):
@@ -534,7 +586,8 @@ class TestTheRealLoaderAcceptsTheBundle:
         module = self.loader()
         mutated = tmp_path / "policy.yaml"
         mutated.write_text(
-            POLICY_YAML.read_text(encoding="utf-8").replace("k: 3", "k: 1", 1), encoding="utf-8"
+            POLICY_YAML.read_text(encoding="utf-8").replace("k: 3", "k: 1", 1),
+            encoding="utf-8",
         )
         with pytest.raises(module.PolicyLoadError, match="evidence_k must be >= 2"):
             module.load_policy(mutated, CALIBRATION_JSON)
@@ -545,7 +598,9 @@ class TestTheRealLoaderAcceptsTheBundle:
         data = calibration()
         data["model_version"] = "9.9.9-other-model"
         mutated.write_text(json.dumps(data), encoding="utf-8")
-        with pytest.raises(module.PolicyLoadError, match="model_version does not match"):
+        with pytest.raises(
+            module.PolicyLoadError, match="model_version does not match"
+        ):
             module.load_policy(POLICY_YAML, mutated)
 
     def test_every_purpose_the_contract_allows_can_build_an_engine(self) -> None:

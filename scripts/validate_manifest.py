@@ -125,7 +125,9 @@ try:
     from app.audit.chain import _FORBIDDEN_SUBSTRINGS as FORBIDDEN_SUBSTRINGS
 
     _VOCAB_SOURCE = "imported from gateway/app/audit/chain.py"
-except ImportError:  # pragma: no cover - keeps the validator usable in a data-only checkout
+except (
+    ImportError
+):  # pragma: no cover - keeps the validator usable in a data-only checkout
     FORBIDDEN_SUBSTRINGS = (
         "audio",
         "pcm",
@@ -136,7 +138,9 @@ except ImportError:  # pragma: no cover - keeps the validator usable in a data-o
         "msisdn",
         "caller_name",
     )
-    _VOCAB_SOURCE = "local fallback (gateway/ not importable — verify it matches chain.py)"
+    _VOCAB_SOURCE = (
+        "local fallback (gateway/ not importable — verify it matches chain.py)"
+    )
 
 #: `sha256_audio` is in the mandatory field list and contains "audio". It holds a hash, which is the
 #: whole point of the manifest carrying hashes instead of paths, so it is an explicit exception.
@@ -145,7 +149,16 @@ FORBIDDEN_EXCEPTIONS = frozenset({"sha256_audio"})
 
 #: A path column is the specific failure R-21 exists to prevent: it puts the location of raw research
 #: audio into a file that gets committed, and from there into every clone.
-PATH_COLUMN_HINTS = ("path", "filepath", "file_path", "filename", "uri", "url", "s3_key", "location")
+PATH_COLUMN_HINTS = (
+    "path",
+    "filepath",
+    "file_path",
+    "filename",
+    "uri",
+    "url",
+    "s3_key",
+    "location",
+)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -234,7 +247,11 @@ def load_rows(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
 
     if suffix in (".json", ".jsonl"):
         if suffix == ".jsonl":
-            rows = [json.loads(line) for line in path.read_text("utf-8").splitlines() if line.strip()]
+            rows = [
+                json.loads(line)
+                for line in path.read_text("utf-8").splitlines()
+                if line.strip()
+            ]
         else:
             payload = json.loads(path.read_text("utf-8"))
             rows = payload if isinstance(payload, list) else payload.get("samples", [])
@@ -346,7 +363,9 @@ def check_identity(report: Report, rows: Sequence[dict[str, Any]]) -> None:
     seen_ids: dict[str, int] = {}
     dup_ids: list[int] = []
     blank_ids: list[int] = []
-    for index, row in enumerate(rows, start=2):  # 2 = first data row of a CSV with a header
+    for index, row in enumerate(
+        rows, start=2
+    ):  # 2 = first data row of a CSV with a header
         sample_id = _text(row.get("sample_id"))
         if _blank(sample_id):
             blank_ids.append(index)
@@ -357,7 +376,9 @@ def check_identity(report: Report, rows: Sequence[dict[str, Any]]) -> None:
             seen_ids[sample_id] = index
 
     if blank_ids:
-        report.error("D-03", "`sample_id` is empty. It is the stable immutable key.", blank_ids)
+        report.error(
+            "D-03", "`sample_id` is empty. It is the stable immutable key.", blank_ids
+        )
     if dup_ids:
         report.error(
             "D-03",
@@ -473,7 +494,9 @@ def check_vocabularies(report: Report, rows: Sequence[dict[str, Any]]) -> None:
             dev_rows[:8],
         )
     if bad_label:
-        report.error("D-05", f"`label` must be one of {sorted(VALID_LABELS)}.", bad_label)
+        report.error(
+            "D-05", f"`label` must be one of {sorted(VALID_LABELS)}.", bad_label
+        )
     if bad_attack:
         report.error(
             "D-05",
@@ -579,7 +602,9 @@ def _parse_date(value: Any) -> date | None:
     return None
 
 
-def _root_ancestor(sample_id: str, parents: dict[str, str], *, limit: int = 64) -> tuple[str, bool]:
+def _root_ancestor(
+    sample_id: str, parents: dict[str, str], *, limit: int = 64
+) -> tuple[str, bool]:
     """Walk `derived_from_sample_id` to the original recording. Returns ``(root, cycle_detected)``."""
     seen = {sample_id}
     current = sample_id
@@ -594,7 +619,9 @@ def _root_ancestor(sample_id: str, parents: dict[str, str], *, limit: int = 64) 
     return current, True
 
 
-def check_grouping(report: Report, rows: Sequence[dict[str, Any]], columns: Sequence[str]) -> None:
+def check_grouping(
+    report: Report, rows: Sequence[dict[str, Any]], columns: Sequence[str]
+) -> None:
     """D-07 … D-10: the split protocol. This is the reason the file exists.
 
     Playbook section 2.2 requires grouping **before** any augmentation runs. A validator cannot see
@@ -603,7 +630,9 @@ def check_grouping(report: Report, rows: Sequence[dict[str, Any]], columns: Sequ
     that leaked into the locked set. Each of those is what "grouped after augmenting" looks like from
     the outside (rules.md R-38).
     """
-    by_id = {_text(r.get("sample_id")): r for r in rows if not _blank(r.get("sample_id"))}
+    by_id = {
+        _text(r.get("sample_id")): r for r in rows if not _blank(r.get("sample_id"))
+    }
     parents = {
         _text(r.get("sample_id")): _text(r.get("derived_from_sample_id"))
         for r in rows
@@ -637,7 +666,11 @@ def check_grouping(report: Report, rows: Sequence[dict[str, Any]], columns: Sequ
             dangling,
         )
     if cycles:
-        report.error("D-07", "`derived_from_sample_id` forms a cycle in the lineage graph.", cycles)
+        report.error(
+            "D-07",
+            "`derived_from_sample_id` forms a cycle in the lineage graph.",
+            cycles,
+        )
 
     for root, members in lineage_groups.items():
         splits = {split_of.get(m, "") for m in members}
@@ -696,7 +729,8 @@ def check_grouping(report: Report, rows: Sequence[dict[str, Any]], columns: Sequ
         offenders = [
             index
             for index, row in enumerate(rows, start=2)
-            if _text(row.get("split")) in TUNING_SPLITS and _generator_key(row) in heldout
+            if _text(row.get("split")) in TUNING_SPLITS
+            and _generator_key(row) in heldout
         ]
         if offenders:
             report.error(
@@ -817,7 +851,9 @@ def check_population(report: Report, rows: Sequence[dict[str, Any]]) -> None:
             "R-37).",
         )
     for split in ("train", "dev_calibration"):
-        if counts.get(split, 0) == 0 and not (split == "dev_calibration" and counts.get("dev")):
+        if counts.get(split, 0) == 0 and not (
+            split == "dev_calibration" and counts.get("dev")
+        ):
             report.warn("D-11", f"`{split}` is empty.")
 
     labels: dict[str, int] = defaultdict(int)
@@ -832,7 +868,8 @@ def check_population(report: Report, rows: Sequence[dict[str, Any]]) -> None:
         )
 
     report.coverage_notes.append(
-        "split populations: " + ", ".join(f"{k or '<blank>'}={v}" for k, v in sorted(counts.items()))
+        "split populations: "
+        + ", ".join(f"{k or '<blank>'}={v}" for k, v in sorted(counts.items()))
     )
 
 
@@ -913,12 +950,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Validate a dataset manifest against the playbook field list and split protocol.",
         epilog="Exit 0 valid (warnings allowed), 1 invalid, 2 could not run.",
     )
-    parser.add_argument("manifest", nargs="?", type=Path, help=f"default: {DEFAULT_DIR}/manifest.*")
+    parser.add_argument(
+        "manifest", nargs="?", type=Path, help=f"default: {DEFAULT_DIR}/manifest.*"
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument(
-        "--strict", action="store_true", help="treat warnings as errors (use once M-1/M-2 are closed)"
+        "--strict",
+        action="store_true",
+        help="treat warnings as errors (use once M-1/M-2 are closed)",
     )
-    parser.add_argument("--list-checks", action="store_true", help="describe checks and known gaps")
+    parser.add_argument(
+        "--list-checks", action="store_true", help="describe checks and known gaps"
+    )
     args = parser.parse_args(argv)
 
     if args.list_checks:

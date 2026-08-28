@@ -54,9 +54,7 @@ def _create_table_sql() -> str:
     """
     body: list[str] = [f"    {column.ddl}" for column in COLUMNS]
     body.append(f"    CONSTRAINT pk_{TABLE_NAME} PRIMARY KEY (event_id)")
-    body.extend(
-        f"    CONSTRAINT {c.name} {c.definition}" for c in UNIQUE_CONSTRAINTS
-    )
+    body.extend(f"    CONSTRAINT {c.name} {c.definition}" for c in UNIQUE_CONSTRAINTS)
     body.extend(
         f"    CONSTRAINT {c.name} CHECK ({c.definition})" for c in CHECK_CONSTRAINTS
     )

@@ -81,7 +81,9 @@ def _stop_services() -> tuple[list[dict], list[str]]:
             )
             previous = response["service"]["runningCount"]
             done.append({"service": service, "desiredCount": 0, "wasRunning": previous})
-            logger.info("service %s set to desiredCount=0 (was running %s)", service, previous)
+            logger.info(
+                "service %s set to desiredCount=0 (was running %s)", service, previous
+            )
         except ecs.exceptions.ServiceNotFoundException:
             # Not a failure. `deployRuntime=false` is the normal state and the services still exist,
             # but a torn-down ComputeStack has no services at all — and "nothing to stop" is the
@@ -111,7 +113,9 @@ def _stop_capacity() -> tuple[dict, list[str]]:
     result: dict = {"asg": ASG_NAME}
 
     try:
-        described = autoscaling.describe_auto_scaling_groups(AutoScalingGroupNames=[ASG_NAME])
+        described = autoscaling.describe_auto_scaling_groups(
+            AutoScalingGroupNames=[ASG_NAME]
+        )
         groups = described.get("AutoScalingGroups", [])
         if not groups:
             logger.info("ASG %s not found — nothing to stop", ASG_NAME)
@@ -132,7 +136,9 @@ def _stop_capacity() -> tuple[dict, list[str]]:
             DesiredCapacity=0,
         )
         result["after"] = {"min": 0, "max": 0, "desired": 0}
-        logger.info("ASG %s set to min=0 max=0 desired=0 (was %s)", ASG_NAME, result["before"])
+        logger.info(
+            "ASG %s set to min=0 max=0 desired=0 (was %s)", ASG_NAME, result["before"]
+        )
     except Exception as exc:  # noqa: BLE001 — deliberate: report, do not mask
         logger.exception("failed to stop ASG %s", ASG_NAME)
         failures.append(f"autoscaling:UpdateAutoScalingGroup {ASG_NAME}: {exc}")
@@ -157,7 +163,9 @@ def _describe_trigger(event: object) -> str:
 def handler(event, context):  # noqa: ANN001, ANN201 — Lambda signature
     """Stop all runtime spend. Safe to call at any time, including when nothing is running."""
     trigger = _describe_trigger(event)
-    logger.warning("RuntimeStopper invoked (%s) — zeroing runtime in %s", trigger, TARGET_REGION)
+    logger.warning(
+        "RuntimeStopper invoked (%s) — zeroing runtime in %s", trigger, TARGET_REGION
+    )
 
     services, service_failures = _stop_services()
     capacity, capacity_failures = _stop_capacity()

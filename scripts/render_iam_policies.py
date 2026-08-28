@@ -118,7 +118,9 @@ def validate_grammar(doc: dict, name: str) -> list[str]:
     if doc.get("Version") != "2012-10-17":
         # The only other legal value is the 2008 version, which does not support policy variables or
         # most condition operators. If it ever appears here it is a copy-paste from an old example.
-        problems.append(f"{name}: Version must be '2012-10-17', found {doc.get('Version')!r}")
+        problems.append(
+            f"{name}: Version must be '2012-10-17', found {doc.get('Version')!r}"
+        )
 
     statements = doc.get("Statement")
     if not isinstance(statements, list) or not statements:
@@ -126,7 +128,9 @@ def validate_grammar(doc: dict, name: str) -> list[str]:
         return problems
 
     for i, stmt in enumerate(statements):
-        where = f"{name}: Statement[{i}]" + (f" ({stmt['Sid']})" if isinstance(stmt, dict) and "Sid" in stmt else "")
+        where = f"{name}: Statement[{i}]" + (
+            f" ({stmt['Sid']})" if isinstance(stmt, dict) and "Sid" in stmt else ""
+        )
         if not isinstance(stmt, dict):
             problems.append(f"{where}: not an object")
             continue
@@ -135,7 +139,9 @@ def validate_grammar(doc: dict, name: str) -> list[str]:
         if unknown:
             problems.append(f"{where}: unknown key(s): {sorted(unknown)}")
         if stmt.get("Effect") not in {"Allow", "Deny"}:
-            problems.append(f"{where}: Effect must be 'Allow' or 'Deny', found {stmt.get('Effect')!r}")
+            problems.append(
+                f"{where}: Effect must be 'Allow' or 'Deny', found {stmt.get('Effect')!r}"
+            )
         if not ({"Action", "NotAction"} & set(stmt)):
             problems.append(f"{where}: needs Action or NotAction")
 
@@ -143,7 +149,9 @@ def validate_grammar(doc: dict, name: str) -> list[str]:
         # because the resource IS the role the policy is attached to. An identity policy without
         # Resource is a malformed document.
         if "Principal" not in stmt and not ({"Resource", "NotResource"} & set(stmt)):
-            problems.append(f"{where}: identity-policy statement needs Resource or NotResource")
+            problems.append(
+                f"{where}: identity-policy statement needs Resource or NotResource"
+            )
 
     return problems
 
@@ -163,8 +171,12 @@ def main() -> int:
         required=True,
         help="12-digit AWS account id. Substituted for <AWS_ACCOUNT_ID>.",
     )
-    parser.add_argument("--github-owner", required=True, help="Substituted for <GITHUB_OWNER>.")
-    parser.add_argument("--github-repo", required=True, help="Substituted for <GITHUB_REPO>.")
+    parser.add_argument(
+        "--github-owner", required=True, help="Substituted for <GITHUB_OWNER>."
+    )
+    parser.add_argument(
+        "--github-repo", required=True, help="Substituted for <GITHUB_REPO>."
+    )
     args = parser.parse_args()
 
     # Checked because the failure is otherwise silent and late: a mistyped account id produces
@@ -280,7 +292,9 @@ def main() -> int:
     for w in warnings:
         print(f"WARNING: {w}", file=sys.stderr)
 
-    print(f"Rendered {len(written)} policy document(s) into {OUT_DIR.relative_to(REPO_ROOT)}/:")
+    print(
+        f"Rendered {len(written)} policy document(s) into {OUT_DIR.relative_to(REPO_ROOT)}/:"
+    )
     for out in written:
         size = out.stat().st_size
         print(f"  {out.name}  ({size} bytes)")

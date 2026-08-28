@@ -142,7 +142,9 @@ def _describe(vector: np.ndarray, payload: bytes) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate or verify contract_vector_v1.npy")
+    parser = argparse.ArgumentParser(
+        description="Generate or verify contract_vector_v1.npy"
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -161,7 +163,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         committed = np.load(FIXTURE_PATH, allow_pickle=False)
         if committed.shape != vector.shape or committed.dtype != vector.dtype:
-            print("MISMATCH: committed fixture has a different shape or dtype", file=sys.stderr)
+            print(
+                "MISMATCH: committed fixture has a different shape or dtype",
+                file=sys.stderr,
+            )
             return 1
         # Bit-exact, not allclose. This comparison is the one that catches a changed divisor, and a
         # tolerance would let 32767.0 through: the relative difference is 3e-5.
@@ -174,7 +179,9 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        print(f"OK  {FIXTURE_PATH.name}\n{_describe(vector, FIXTURE_PATH.read_bytes())}")
+        print(
+            f"OK  {FIXTURE_PATH.name}\n{_describe(vector, FIXTURE_PATH.read_bytes())}"
+        )
         return 0
 
     FIXTURE_PATH.parent.mkdir(parents=True, exist_ok=True)

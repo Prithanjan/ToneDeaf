@@ -164,7 +164,9 @@ SELECT count(*)::bigint FROM doomed
 #: Post-delete assertion, run in the SAME transaction. If a session is not empty after its delete
 #: reported rows removed, the transaction is rolled back: a partially deleted session must never
 #: become durable, because that is a permanently unverifiable chain.
-COUNT_SESSION_ROWS: Final[str] = f"SELECT count(*)::bigint FROM {TABLE_NAME} WHERE session_id = $1"
+COUNT_SESSION_ROWS: Final[str] = (
+    f"SELECT count(*)::bigint FROM {TABLE_NAME} WHERE session_id = $1"
+)
 
 TRY_ADVISORY_LOCK: Final[str] = "SELECT pg_try_advisory_lock($1)"
 ADVISORY_UNLOCK: Final[str] = "SELECT pg_advisory_unlock($1)"
@@ -374,7 +376,9 @@ def build_receipt(
         sessions_skipped_reappeared=skipped_reappeared,
         sessions_skipped_non_contiguous=skipped_non_contiguous,
         events_deleted=sum(plan.event_count for plan in deleted),
-        max_retention_overshoot_seconds=max((p.overshoot_seconds for p in deleted), default=0),
+        max_retention_overshoot_seconds=max(
+            (p.overshoot_seconds for p in deleted), default=0
+        ),
         session_ids=tuple(shown),
         session_ids_omitted=len(ids) - len(shown),
         deleted_session_digest=digest_of(ids),
@@ -436,7 +440,9 @@ async def delete_session(conn: Connection, plan: SessionPlan, cutoff: datetime) 
             is worth one extra ``count(*)``.
     """
     async with conn.transaction():
-        removed = int(await conn.fetchval(DELETE_WHOLE_SESSION, plan.session_id, cutoff) or 0)
+        removed = int(
+            await conn.fetchval(DELETE_WHOLE_SESSION, plan.session_id, cutoff) or 0
+        )
         if removed == 0:
             # The NOT EXISTS guard fired: the session was resumed and now has unexpired rows. Correct
             # outcome, not an error — it will be swept once those rows expire too.
@@ -536,7 +542,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog="Deletes WHOLE SESSIONS only. See the module docstring for why a partial delete is a "
         "forged tamper signal.",
     )
-    parser.add_argument("--retention-days", type=int, default=int(os.environ.get("AUDIT_RETENTION_DAYS", "7")))
+    parser.add_argument(
+        "--retention-days",
+        type=int,
+        default=int(os.environ.get("AUDIT_RETENTION_DAYS", "7")),
+    )
     parser.add_argument("--session-limit", type=int, default=DEFAULT_SESSION_LIMIT)
     parser.add_argument(
         "--dry-run",
@@ -555,12 +565,16 @@ async def _amain(argv: Sequence[str] | None = None) -> int:
 
     import asyncpg  # imported here so the pure parts above stay importable without a driver
 
-    policy = RetentionPolicy(retention_days=args.retention_days, session_limit=args.session_limit)
+    policy = RetentionPolicy(
+        retention_days=args.retention_days, session_limit=args.session_limit
+    )
     # asyncpg does not accept driver suffixes (+asyncpg, +psycopg2, etc.); normalize to postgresql://
     clean_url = re.sub(r"^postgres(?:ql)?(?:\+[a-zA-Z0-9_]+)?://", "postgresql://", url)
     conn = await asyncpg.connect(clean_url)
     try:
-        receipt = await run_sweep(conn, policy, now=datetime.now(tz=timezone.utc), dry_run=args.dry_run)
+        receipt = await run_sweep(
+            conn, policy, now=datetime.now(tz=timezone.utc), dry_run=args.dry_run
+        )
     except RetentionError as exc:
         print(str(exc), file=sys.stderr)
         return EXIT_UNSAFE

@@ -43,8 +43,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_SCHEMA_PATH = REPO_ROOT / "datasets" / "manifest" / "manifest.schema.json"
 MANIFEST_EXAMPLE_PATH = REPO_ROOT / "datasets" / "manifest" / "example.manifest.json"
-LEDGER_SCHEMA_PATH = REPO_ROOT / "datasets" / "consent_ledger" / "consent_ledger.schema.json"
-LEDGER_EXAMPLE_PATH = REPO_ROOT / "datasets" / "consent_ledger" / "example.consent_ledger.json"
+LEDGER_SCHEMA_PATH = (
+    REPO_ROOT / "datasets" / "consent_ledger" / "consent_ledger.schema.json"
+)
+LEDGER_EXAMPLE_PATH = (
+    REPO_ROOT / "datasets" / "consent_ledger" / "example.consent_ledger.json"
+)
 
 sys.path.insert(0, str(REPO_ROOT / "audit" / "migrations"))
 import schema_contract as sc  # noqa: E402
@@ -66,7 +70,17 @@ LEDGER_EXAMPLE = load(LEDGER_EXAMPLE_PATH)
 # Annotation-only keywords. Listed explicitly rather than "anything unrecognised is ignored",
 # because ignoring the unrecognised is precisely how a real constraint gets dropped.
 ANNOTATIONS = frozenset(
-    {"$schema", "$id", "title", "description", "$comment", "$defs", "format", "default", "examples"}
+    {
+        "$schema",
+        "$id",
+        "title",
+        "description",
+        "$comment",
+        "$defs",
+        "format",
+        "default",
+        "examples",
+    }
 )
 ASSERTIONS = frozenset(
     {
@@ -130,7 +144,9 @@ def _resolve(root: dict, ref: str) -> dict:
     return node
 
 
-def validate(instance: Any, schema: dict, root: dict | None = None, path: str = "$") -> list[str]:
+def validate(
+    instance: Any, schema: dict, root: dict | None = None, path: str = "$"
+) -> list[str]:
     """Return a list of human-readable errors. Empty list means valid.
 
     Errors are returned rather than raised so a negative test can assert *which* rule fired,
@@ -156,7 +172,9 @@ def validate(instance: Any, schema: dict, root: dict | None = None, path: str = 
 
     if isinstance(instance, str):
         if "pattern" in schema and re.search(schema["pattern"], instance) is None:
-            errors.append(f"{path}: pattern {schema['pattern']!r} violated by {instance!r}")
+            errors.append(
+                f"{path}: pattern {schema['pattern']!r} violated by {instance!r}"
+            )
         if "minLength" in schema and len(instance) < schema["minLength"]:
             errors.append(f"{path}: shorter than minLength")
         if "maxLength" in schema and len(instance) > schema["maxLength"]:
@@ -203,7 +221,9 @@ def validate(instance: Any, schema: dict, root: dict | None = None, path: str = 
     ):
         errors.append(f"{path}: anyOf violated")
     if "oneOf" in schema:
-        matched = sum(1 for sub in schema["oneOf"] if not validate(instance, sub, root, path))
+        matched = sum(
+            1 for sub in schema["oneOf"] if not validate(instance, sub, root, path)
+        )
         if matched != 1:
             errors.append(f"{path}: oneOf matched {matched} subschemas")
     if "not" in schema and not validate(instance, schema["not"], root, path):
@@ -286,8 +306,12 @@ class TestTheValidatorItself:
 
     def test_the_validator_rejects_what_it_should(self) -> None:
         # Teeth check. Every negative test below relies on validate() actually failing things.
-        schema = {"type": "object", "required": ["a"], "additionalProperties": False,
-                  "properties": {"a": {"type": "integer", "minimum": 2}}}
+        schema = {
+            "type": "object",
+            "required": ["a"],
+            "additionalProperties": False,
+            "properties": {"a": {"type": "integer", "minimum": 2}},
+        }
         assert validate({"a": 2}, schema) == []
         assert validate({}, schema)
         assert validate({"a": 1}, schema)
@@ -299,10 +323,14 @@ class TestTheValidatorItself:
 class TestManifestSchemaAcceptsTheExample:
     def test_the_committed_example_validates(self) -> None:
         errors = validate(MANIFEST_EXAMPLE, MANIFEST_SCHEMA)
-        assert errors == [], "the example everyone copies does not validate: " + "; ".join(errors)
+        assert errors == [], (
+            "the example everyone copies does not validate: " + "; ".join(errors)
+        )
 
     def test_every_ref_resolves(self) -> None:
-        for ref in re.findall(r'"\$ref":\s*"([^"]+)"', MANIFEST_SCHEMA_PATH.read_text("utf-8")):
+        for ref in re.findall(
+            r'"\$ref":\s*"([^"]+)"', MANIFEST_SCHEMA_PATH.read_text("utf-8")
+        ):
             _resolve(MANIFEST_SCHEMA, ref)  # raises KeyError if dangling
 
     def test_the_example_exercises_more_than_one_split(self) -> None:
@@ -402,7 +430,9 @@ class TestNoRawAudioAnywhereInTheManifest:
         for schema, label in ((MANIFEST_SCHEMA, "manifest"), (LEDGER_SCHEMA, "ledger")):
             hits = [
                 (name, bad)
-                for name, bad in sc.forbidden_substring_hits(sorted(property_names(schema)))
+                for name, bad in sc.forbidden_substring_hits(
+                    sorted(property_names(schema))
+                )
                 if self.SUBSTRING_EXCEPTIONS.get(name) != bad
             ]
             assert hits == [], (
@@ -414,9 +444,13 @@ class TestNoRawAudioAnywhereInTheManifest:
     def test_every_documented_exception_is_still_needed(self) -> None:
         # An exception list nobody prunes eventually excuses a name that no longer exists, and the
         # next reader assumes the collision it describes is still real.
-        declared = set(property_names(MANIFEST_SCHEMA)) | set(property_names(LEDGER_SCHEMA))
+        declared = set(property_names(MANIFEST_SCHEMA)) | set(
+            property_names(LEDGER_SCHEMA)
+        )
         for name, substring in self.SUBSTRING_EXCEPTIONS.items():
-            assert name in declared, f"{name!r} is excused but no longer a property anywhere"
+            assert name in declared, (
+                f"{name!r} is excused but no longer a property anywhere"
+            )
             hits = dict(sc.forbidden_substring_hits([name]))
             assert hits.get(name) == substring, (
                 f"{name!r} no longer trips {substring!r}; delete the exception rather than "
@@ -427,7 +461,16 @@ class TestNoRawAudioAnywhereInTheManifest:
     def test_no_property_name_locates_a_file(self) -> None:
         # Separate from the substring deny-list: `recording_uri` trips no forbidden substring and
         # is exactly the field this design refuses to have.
-        locators = ("path", "uri", "url", "filename", "filepath", "blob", "bytes", "location")
+        locators = (
+            "path",
+            "uri",
+            "url",
+            "filename",
+            "filepath",
+            "blob",
+            "bytes",
+            "location",
+        )
         for schema, label in ((MANIFEST_SCHEMA, "manifest"), (LEDGER_SCHEMA, "ledger")):
             for name in sorted(property_names(schema)):
                 lowered = name.lower()
@@ -479,13 +522,19 @@ class TestGroupingIsExplicitNotImplied:
 
     def test_the_grouping_keys_are_pinned_as_a_const_not_merely_described(self) -> None:
         group_by = MANIFEST_SCHEMA["$defs"]["grouping"]["properties"]["group_by"]
-        assert group_by["const"] == ["speaker_id_hash", "root_sample_id", "generator_group_id"], (
+        assert group_by["const"] == [
+            "speaker_id_hash",
+            "root_sample_id",
+            "generator_group_id",
+        ], (
             "group_by must be a const. A free array would let a splitter that grouped on speaker "
             "alone produce a manifest that validates, which is the failure this pins shut."
         )
 
     def test_grouping_before_augmentation_has_no_false_value(self) -> None:
-        field = MANIFEST_SCHEMA["$defs"]["grouping"]["properties"]["grouped_before_augmentation"]
+        field = MANIFEST_SCHEMA["$defs"]["grouping"]["properties"][
+            "grouped_before_augmentation"
+        ]
         assert field.get("const") is True
         assert "enum" not in field and field.get("type") != "boolean", (
             "declared as a boolean, this becomes a flag somebody can set to false and still "
@@ -495,13 +544,18 @@ class TestGroupingIsExplicitNotImplied:
     def test_a_manifest_that_grouped_after_augmentation_cannot_validate(self) -> None:
         doc = copy.deepcopy(MANIFEST_EXAMPLE)
         doc["records"][0]["grouping"]["grouped_before_augmentation"] = False
-        assert any("grouped_before_augmentation" in e for e in validate(doc, MANIFEST_SCHEMA))
+        assert any(
+            "grouped_before_augmentation" in e for e in validate(doc, MANIFEST_SCHEMA)
+        )
 
     def test_dropping_the_generator_key_from_group_by_is_rejected(self) -> None:
         # The concrete leak: hold out a generator family, but group only on speaker, and the same
         # generator's output appears in train and in eval_generator_heldout.
         doc = copy.deepcopy(MANIFEST_EXAMPLE)
-        doc["records"][0]["grouping"]["group_by"] = ["speaker_id_hash", "root_sample_id"]
+        doc["records"][0]["grouping"]["group_by"] = [
+            "speaker_id_hash",
+            "root_sample_id",
+        ]
         assert any("group_by" in e for e in validate(doc, MANIFEST_SCHEMA))
 
     def test_an_augmented_record_cannot_claim_depth_zero(self) -> None:
@@ -514,7 +568,9 @@ class TestGroupingIsExplicitNotImplied:
 
     def test_an_original_cannot_name_a_parent(self) -> None:
         doc = copy.deepcopy(MANIFEST_EXAMPLE)
-        record = next(r for r in doc["records"] if r["grouping"]["augmentation_depth"] == 0)
+        record = next(
+            r for r in doc["records"] if r["grouping"]["augmentation_depth"] == 0
+        )
         record["derived_from_sample_id"] = "example-bonafide-original-0001"
         assert validate(doc, MANIFEST_SCHEMA) != []
 
@@ -523,14 +579,18 @@ class TestGroupingIsExplicitNotImplied:
         # A -> B -> C, C's root must be A. Grouping on derived_from_sample_id would give C's group
         # as B and A's group as A, and A and C could then be split apart.
         by_id = {r["sample_id"]: r for r in manifest_records()}
-        chained = [r for r in manifest_records() if r["grouping"]["augmentation_depth"] >= 2]
+        chained = [
+            r for r in manifest_records() if r["grouping"]["augmentation_depth"] >= 2
+        ]
         assert chained, "the example must contain a depth>=2 record"
         for record in chained:
             walker = record
             while walker["derived_from_sample_id"] is not None:
                 walker = by_id[walker["derived_from_sample_id"]]
             assert record["grouping"]["root_sample_id"] == walker["sample_id"]
-            assert record["grouping"]["root_sample_id"] != record["derived_from_sample_id"], (
+            assert (
+                record["grouping"]["root_sample_id"] != record["derived_from_sample_id"]
+            ), (
                 "at depth >= 2 the root and the immediate parent differ; that difference is the "
                 "entire reason root_sample_id exists"
             )
@@ -565,9 +625,9 @@ class TestGroupingIsExplicitNotImplied:
         # scripts/validate_manifest.py owns.
         splits_by_key: dict[str, set[str]] = {}
         for record in manifest_records():
-            splits_by_key.setdefault(record["grouping"]["grouping_key_sha256"], set()).add(
-                record["split"]
-            )
+            splits_by_key.setdefault(
+                record["grouping"]["grouping_key_sha256"], set()
+            ).add(record["split"])
         straddling = {k: sorted(v) for k, v in splits_by_key.items() if len(v) > 1}
         assert straddling == {}, f"grouping keys straddle splits: {straddling}"
 
@@ -579,15 +639,17 @@ class TestGroupingIsExplicitNotImplied:
         victim["split"] = "eval_locked"
         splits_by_key: dict[str, set[str]] = {}
         for record in records:
-            splits_by_key.setdefault(record["grouping"]["grouping_key_sha256"], set()).add(
-                record["split"]
-            )
+            splits_by_key.setdefault(
+                record["grouping"]["grouping_key_sha256"], set()
+            ).add(record["split"])
         assert any(len(v) > 1 for v in splits_by_key.values()), (
             "moving an augmented child into eval_locked did not straddle a grouping key, which "
             "means the key is not actually capturing the derivation relationship"
         )
         # ...and note what the schema alone cannot see: the mutated document is still valid.
-        assert validate({**MANIFEST_EXAMPLE, "records": records}, MANIFEST_SCHEMA) == [], (
+        assert (
+            validate({**MANIFEST_EXAMPLE, "records": records}, MANIFEST_SCHEMA) == []
+        ), (
             "if the schema rejected this, the cross-record check would be redundant; it does not, "
             "which is exactly why the check belongs in scripts/validate_manifest.py"
         )
@@ -657,7 +719,9 @@ class TestAccentIsNeverInferredFromAudio:
     """Playbook 2.1 states it in prose; the enum makes it unstateable."""
 
     def test_the_source_enum_offers_no_inference_option(self) -> None:
-        enum = MANIFEST_SCHEMA["$defs"]["record"]["properties"]["accent_region_source"]["enum"]
+        enum = MANIFEST_SCHEMA["$defs"]["record"]["properties"]["accent_region_source"][
+            "enum"
+        ]
         assert enum == ["self_reported", "dataset_metadata", "unknown"]
         assert not any("infer" in v or "model" in v or "predict" in v for v in enum), (
             "an inference option here would turn bias analysis into a measurement of the "
@@ -685,7 +749,9 @@ class TestConsentIsMandatoryOnEveryRecord:
     def test_only_a_licence_governed_corpus_may_omit_a_retention_date(self) -> None:
         doc = copy.deepcopy(MANIFEST_EXAMPLE)
         record = next(
-            r for r in doc["records"] if r["consent_basis"] != "public-corpus-license-only"
+            r
+            for r in doc["records"]
+            if r["consent_basis"] != "public-corpus-license-only"
         )
         record["retention_expiry"] = None
         assert validate(doc, MANIFEST_SCHEMA) != [], (
@@ -695,7 +761,9 @@ class TestConsentIsMandatoryOnEveryRecord:
     def test_a_public_corpus_may_omit_it(self) -> None:
         # The permitted case, asserted so the constraint above is not accidentally absolute.
         public = [
-            r for r in manifest_records() if r["consent_basis"] == "public-corpus-license-only"
+            r
+            for r in manifest_records()
+            if r["consent_basis"] == "public-corpus-license-only"
         ]
         assert public and any(r["retention_expiry"] is None for r in public)
 
@@ -714,7 +782,9 @@ class TestConsentLedger:
         assert errors == [], "; ".join(errors)
 
     def test_every_ref_resolves(self) -> None:
-        for ref in re.findall(r'"\$ref":\s*"([^"]+)"', LEDGER_SCHEMA_PATH.read_text("utf-8")):
+        for ref in re.findall(
+            r'"\$ref":\s*"([^"]+)"', LEDGER_SCHEMA_PATH.read_text("utf-8")
+        ):
             _resolve(LEDGER_SCHEMA, ref)
 
     def test_consent_basis_and_retention_expiry_are_required_per_record(self) -> None:
@@ -737,7 +807,15 @@ class TestConsentLedger:
     @pytest.mark.privacy
     def test_the_ledger_has_no_field_for_an_identity(self) -> None:
         names = property_names(LEDGER_SCHEMA)
-        for banned in ("name", "email", "mobile", "address", "signature", "dob", "aadhaar"):
+        for banned in (
+            "name",
+            "email",
+            "mobile",
+            "address",
+            "signature",
+            "dob",
+            "aadhaar",
+        ):
             offenders = [n for n in names if banned in n.lower()]
             assert offenders == [], (
                 f"{offenders} would make this the highest-value file in the repository. The "
@@ -747,10 +825,16 @@ class TestConsentLedger:
     @pytest.mark.privacy
     def test_the_example_contains_no_identifier_shaped_value(self) -> None:
         blob = LEDGER_EXAMPLE_PATH.read_text("utf-8")
-        assert re.search(r"\b(?:\+?91[-\s]?)?[6-9]\d{9}\b", blob) is None, "phone-shaped number"
-        assert re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", blob) is None, "email-shaped string"
+        assert re.search(r"\b(?:\+?91[-\s]?)?[6-9]\d{9}\b", blob) is None, (
+            "phone-shaped number"
+        )
+        assert re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", blob) is None, (
+            "email-shaped string"
+        )
 
-    def test_the_subject_hash_has_the_same_shape_as_the_manifest_speaker_hash(self) -> None:
+    def test_the_subject_hash_has_the_same_shape_as_the_manifest_speaker_hash(
+        self,
+    ) -> None:
         # The join is value equality, so a shape mismatch would silently make it always empty.
         assert (
             LEDGER_SCHEMA["$defs"]["record"]["properties"]["subject_id_hash"]["$ref"]
@@ -759,7 +843,9 @@ class TestConsentLedger:
         assert LEDGER_SCHEMA["$defs"]["sha256"]["pattern"] == "^[0-9a-f]{64}$"
         assert MANIFEST_SCHEMA["$defs"]["sha256"]["pattern"] == "^[0-9a-f]{64}$"
 
-    def test_withdrawal_is_present_on_every_record_including_unwithdrawn_ones(self) -> None:
+    def test_withdrawal_is_present_on_every_record_including_unwithdrawn_ones(
+        self,
+    ) -> None:
         assert "withdrawal" in LEDGER_SCHEMA["$defs"]["record"]["required"]
         for record in LEDGER_EXAMPLE["records"]:
             assert "withdrawn" in record["withdrawal"], (
@@ -781,9 +867,9 @@ class TestConsentLedger:
             "withdrawn": True,
             "withdrawn_at": "2026-02-01T00:00:00Z",
         }
-        assert any("deletion_completed_at" in e for e in validate(doc, LEDGER_SCHEMA)), (
-            "a withdrawal with no completion timestamp is a request, not a deletion"
-        )
+        assert any(
+            "deletion_completed_at" in e for e in validate(doc, LEDGER_SCHEMA)
+        ), "a withdrawal with no completion timestamp is a request, not a deletion"
 
     def test_an_unwithdrawn_record_cannot_carry_a_withdrawal_date(self) -> None:
         doc = copy.deepcopy(LEDGER_EXAMPLE)
@@ -807,13 +893,17 @@ class TestConsentLedger:
     def test_demo_playback_requires_a_named_capture_session(self) -> None:
         doc = copy.deepcopy(LEDGER_EXAMPLE)
         record = next(
-            r for r in doc["records"] if "demo_playback_to_third_parties" in r["consent_scope"]
+            r
+            for r in doc["records"]
+            if "demo_playback_to_third_parties" in r["consent_scope"]
         )
         del record["capture_session_id"]
         assert any("capture_session_id" in e for e in validate(doc, LEDGER_SCHEMA))
 
     def test_the_example_shows_a_completed_withdrawal(self) -> None:
-        withdrawn = [r for r in LEDGER_EXAMPLE["records"] if r["withdrawal"]["withdrawn"]]
+        withdrawn = [
+            r for r in LEDGER_EXAMPLE["records"] if r["withdrawal"]["withdrawn"]
+        ]
         assert withdrawn, "the example must show what an honoured withdrawal looks like"
         for record in withdrawn:
             assert record["withdrawal"]["deletion_completed_at"] is not None
@@ -873,8 +963,12 @@ class TestTheTwoFilesJoin:
                     "two retention dates for one sample means the earlier one will be ignored"
                 )
 
-    def test_the_ledger_basis_vocabulary_is_the_manifest_one_minus_the_licence_case(self) -> None:
-        manifest = set(MANIFEST_SCHEMA["$defs"]["record"]["properties"]["consent_basis"]["enum"])
+    def test_the_ledger_basis_vocabulary_is_the_manifest_one_minus_the_licence_case(
+        self,
+    ) -> None:
+        manifest = set(
+            MANIFEST_SCHEMA["$defs"]["record"]["properties"]["consent_basis"]["enum"]
+        )
         ledger = set(LEDGER_SCHEMA["$defs"]["consent_basis"]["enum"])
         assert ledger == manifest - {"public-corpus-license-only"}, (
             "divergent vocabularies make the join silently partial: a basis valid in one file "
@@ -908,17 +1002,25 @@ class TestNoPlaceholderPassesAsReal:
         )
 
     def test_the_ledger_example_announces_itself(self) -> None:
-        assert "example" in LEDGER_EXAMPLE["ledger_id"] and "not-real" in LEDGER_EXAMPLE["ledger_id"]
+        assert (
+            "example" in LEDGER_EXAMPLE["ledger_id"]
+            and "not-real" in LEDGER_EXAMPLE["ledger_id"]
+        )
 
     def test_the_example_licence_cannot_be_mistaken_for_a_real_one(self) -> None:
         for record in manifest_records():
-            assert "EXAMPLE" in record["source_license"] or "INTERNAL" in record["source_license"]
+            assert (
+                "EXAMPLE" in record["source_license"]
+                or "INTERNAL" in record["source_license"]
+            )
 
     def test_the_example_consent_wording_is_marked_as_not_a_form(self) -> None:
         for version in LEDGER_EXAMPLE["consent_form_versions"]:
             assert "NOT A REAL FORM" in version["plain_language_summary"].upper()
 
-    def test_the_named_corpus_access_terms_have_an_unassigned_owner_marked_todo(self) -> None:
+    def test_the_named_corpus_access_terms_have_an_unassigned_owner_marked_todo(
+        self,
+    ) -> None:
         # Better an explicit TODO than a plausible name nobody agreed to be.
         for pin in MANIFEST_EXAMPLE["source_snapshot"]["pinned_revisions"]:
             assert pin["access_terms_accepted_by"].startswith("TODO")
@@ -950,7 +1052,9 @@ class TestWithTheRealLibrary:
         jsonschema = pytest.importorskip("jsonschema")
         jsonschema.Draft202012Validator(LEDGER_SCHEMA).validate(LEDGER_EXAMPLE)
 
-    def test_the_real_library_agrees_with_the_subset_validator_on_rejections(self) -> None:
+    def test_the_real_library_agrees_with_the_subset_validator_on_rejections(
+        self,
+    ) -> None:
         # The point of this one: if the subset validator and the library ever disagree about a
         # rejection, the negative tests above are measuring the wrong thing.
         jsonschema = pytest.importorskip("jsonschema")
@@ -960,9 +1064,13 @@ class TestWithTheRealLibrary:
             lambda d: d["records"][0]["grouping"].__setitem__(
                 "grouped_before_augmentation", False
             ),
-            lambda d: d["records"][0]["grouping"].__setitem__("group_by", ["speaker_id_hash"]),
+            lambda d: d["records"][0]["grouping"].__setitem__(
+                "group_by", ["speaker_id_hash"]
+            ),
             lambda d: d["records"][0].__setitem__("split", "eval"),
-            lambda d: d["records"][0].__setitem__("accent_region_source", "inferred_from_audio"),
+            lambda d: d["records"][0].__setitem__(
+                "accent_region_source", "inferred_from_audio"
+            ),
         ):
             doc = copy.deepcopy(MANIFEST_EXAMPLE)
             mutate(doc)

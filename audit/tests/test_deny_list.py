@@ -73,13 +73,20 @@ class TestRule1ForbiddenNames:
         """An exact-name deny-list is one a rename walks around: ``audio_blob`` is refused,
         ``audioBlob`` is not, and the reviewer sees a green tick."""
         assert sc.forbidden_substring_hits(["AudioBlob"]) == [("AudioBlob", "audio")]
-        assert sc.forbidden_substring_hits(["window_pcm_v2"]) == [("window_pcm_v2", "pcm")]
-        assert sc.forbidden_substring_hits(["CALLER_NAME"]) == [("CALLER_NAME", "caller_name")]
+        assert sc.forbidden_substring_hits(["window_pcm_v2"]) == [
+            ("window_pcm_v2", "pcm")
+        ]
+        assert sc.forbidden_substring_hits(["CALLER_NAME"]) == [
+            ("CALLER_NAME", "caller_name")
+        ]
 
     @pytest.mark.privacy
     def test_a_clean_name_is_not_flagged(self) -> None:
         """A deny-list that flags everything gets disabled within a week."""
-        assert sc.forbidden_substring_hits(["spoof_risk", "quality_flags", "event_seq"]) == []
+        assert (
+            sc.forbidden_substring_hits(["spoof_risk", "quality_flags", "event_seq"])
+            == []
+        )
 
 
 class TestChainPyAgreement:
@@ -109,14 +116,20 @@ class TestChainPyAgreement:
         *other* substring, and keeps passing on the day ``raw`` is added there.
         """
         gap = set(sc.FORBIDDEN_COLUMN_SUBSTRINGS) - set(_FORBIDDEN_SUBSTRINGS)
-        assert gap <= {"raw"}, f"chain.py has lost deny-list coverage for {sorted(gap - {'raw'})}"
+        assert gap <= {"raw"}, (
+            f"chain.py has lost deny-list coverage for {sorted(gap - {'raw'})}"
+        )
 
     @pytest.mark.privacy
     def test_raw_is_refused_at_the_database_layer_regardless(self) -> None:
         """Which is the point of the superset: ``raw_audio_path`` is caught twice, ``raw_features`` —
         which contains no other forbidden substring — is caught only here."""
-        assert sc.forbidden_substring_hits(["raw_features"]) == [("raw_features", "raw")]
-        assert sc.forbidden_substring_hits(["raw_call_ref"]) == [("raw_call_ref", "raw")]
+        assert sc.forbidden_substring_hits(["raw_features"]) == [
+            ("raw_features", "raw")
+        ]
+        assert sc.forbidden_substring_hits(["raw_call_ref"]) == [
+            ("raw_call_ref", "raw")
+        ]
 
     @pytest.mark.parity
     def test_the_hashed_and_stored_field_sets_agree(self) -> None:
@@ -190,7 +203,9 @@ class TestRule4Width:
     def test_a_bounded_narrow_column_is_allowed_by_rule_4(self) -> None:
         """Rule 4 bounds width; it does not ban new columns. Blurring the two would make the deny-list
         an argument against ever extending the schema, and it would lose the argument."""
-        narrow = sc.ColumnFact(sc.TABLE_NAME, "channel_hint", "character varying", "varchar", 32)
+        narrow = sc.ColumnFact(
+            sc.TABLE_NAME, "channel_hint", "character varying", "varchar", 32
+        )
         assert not any("rule 4" in v for v in sc.deny_list_violations([narrow]))
 
 
@@ -199,11 +214,17 @@ class TestRule5ExactSet:
     def test_an_extra_column_fails(self) -> None:
         """The rule as written: "an unexpected *extra* column fails the test too"."""
         problems = sc.allow_list_violations([*sc.COLUMN_NAMES, "notes"])
-        assert problems == [f"rule 5 (exact set): unexpected column {sc.TABLE_NAME}.notes"]
+        assert problems == [
+            f"rule 5 (exact set): unexpected column {sc.TABLE_NAME}.notes"
+        ]
 
     def test_a_missing_column_fails(self) -> None:
-        problems = sc.allow_list_violations([n for n in sc.COLUMN_NAMES if n != "event_hash"])
-        assert problems == [f"rule 5 (exact set): missing column {sc.TABLE_NAME}.event_hash"]
+        problems = sc.allow_list_violations(
+            [n for n in sc.COLUMN_NAMES if n != "event_hash"]
+        )
+        assert problems == [
+            f"rule 5 (exact set): missing column {sc.TABLE_NAME}.event_hash"
+        ]
 
     def test_both_directions_are_reported_together(self) -> None:
         """One CI run per violation turns a schema review into five CI runs."""
@@ -296,8 +317,13 @@ class TestTheDetectorCatchesRealisticMigrations:
         as ``chain.py`` does over ``CHAIN_FIELDS``, so such a commit cannot be imported — let alone
         migrated. The test below proves the guard has teeth by running it over a mutated list.
         """
-        poisoned = [*sc.declared_column_facts(), sc.ColumnFact("audit_event", "audio_ref", "text", "text")]
-        assert sc.deny_list_violations(poisoned), "the import-time self-check would not have fired"
+        poisoned = [
+            *sc.declared_column_facts(),
+            sc.ColumnFact("audit_event", "audio_ref", "text", "text"),
+        ]
+        assert sc.deny_list_violations(poisoned), (
+            "the import-time self-check would not have fired"
+        )
 
     def test_a_clean_second_table_is_still_allowed(self) -> None:
         """Rules 1-4 apply schema-wide, which must not mean "no other table may exist". Alembic's own
@@ -305,7 +331,9 @@ class TestTheDetectorCatchesRealisticMigrations:
         version_table = sc.ColumnFact(
             sc.ALEMBIC_VERSION_TABLE, "version_num", "character varying", "varchar", 32
         )
-        assert sc.deny_list_violations([*sc.declared_column_facts(), version_table]) == []
+        assert (
+            sc.deny_list_violations([*sc.declared_column_facts(), version_table]) == []
+        )
 
 
 class TestForbiddenActionValues:
@@ -317,7 +345,9 @@ class TestForbiddenActionValues:
 
     @pytest.mark.privacy
     @pytest.mark.parametrize("banned", sc.FORBIDDEN_ACTION_VALUES)
-    def test_no_migration_file_uses_an_authorization_verb_as_a_value(self, banned: str) -> None:
+    def test_no_migration_file_uses_an_authorization_verb_as_a_value(
+        self, banned: str
+    ) -> None:
         offenders: list[str] = []
         for path in sorted(MIGRATIONS_DIR.rglob("*.py")):
             if "__pycache__" in path.parts or path.name == "schema_contract.py":
@@ -356,13 +386,17 @@ class TestReflectionSql:
         assert "table_name" in sc.REFLECT_COLUMNS_SQL
         assert "audit_event" not in sc.REFLECT_COLUMNS_SQL
 
-    def test_the_scan_follows_the_search_path_rather_than_hardcoding_public(self) -> None:
+    def test_the_scan_follows_the_search_path_rather_than_hardcoding_public(
+        self,
+    ) -> None:
         """``table_schema = 'public'`` turns the gate into a no-op the moment a migration runs into a
         non-default schema, and it still reports green."""
         assert "current_schema()" in sc.REFLECT_COLUMNS_SQL
         assert "'public'" not in sc.REFLECT_COLUMNS_SQL
 
-    def test_constraint_reflection_reads_postgres_rendering_not_the_migration_file(self) -> None:
+    def test_constraint_reflection_reads_postgres_rendering_not_the_migration_file(
+        self,
+    ) -> None:
         """``pg_get_constraintdef`` is the deployed truth. Asserting against the migration text proves
         only that the file says what the file says."""
         assert "pg_get_constraintdef" in sc.REFLECT_CONSTRAINTS_SQL
@@ -380,17 +414,27 @@ class TestDeployedSchema:
 
     @pytest.mark.integration
     @pytest.mark.privacy
-    def test_no_deployed_column_anywhere_trips_rules_1_to_4(self, database_url: str) -> None:
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+    def test_no_deployed_column_anywhere_trips_rules_1_to_4(
+        self, database_url: str
+    ) -> None:
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
     @pytest.mark.integration
     @pytest.mark.privacy
-    def test_deployed_check_constraints_match_the_migration(self, database_url: str) -> None:
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+    def test_deployed_check_constraints_match_the_migration(
+        self, database_url: str
+    ) -> None:
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
     @pytest.mark.integration
     def test_deployed_indexes_match_the_migration(self, database_url: str) -> None:
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
 
 def test_the_deny_list_covers_the_files_that_exist() -> None:
@@ -401,5 +445,7 @@ def test_the_deny_list_covers_the_files_that_exist() -> None:
     """
     assert MIGRATIONS_DIR.is_dir(), MIGRATIONS_DIR
     scanned = [p for p in MIGRATIONS_DIR.rglob("*.py") if "__pycache__" not in p.parts]
-    assert len(scanned) >= 3, f"expected env.py, schema_contract.py and a revision; found {scanned}"
+    assert len(scanned) >= 3, (
+        f"expected env.py, schema_contract.py and a revision; found {scanned}"
+    )
     assert (Path(MIGRATIONS_DIR) / "versions").is_dir()

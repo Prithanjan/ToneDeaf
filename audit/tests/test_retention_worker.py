@@ -46,7 +46,11 @@ TEST_CHAIN_KEY: Final[bytes] = b"unit-test-key-do-not-deploy-0123"
 def make_row(session_id: UUID, event_seq: int, expiry: datetime) -> dict[str, Any]:
     """The three columns the sweep reasons about. Nothing else is needed, and nothing else is used —
     which is itself the point: the planner never reads ``call_ref``, ``purpose_code``, or a score."""
-    return {"session_id": session_id, "event_seq": event_seq, "retention_expires_at": expiry}
+    return {
+        "session_id": session_id,
+        "event_seq": event_seq,
+        "retention_expires_at": expiry,
+    }
 
 
 def make_event(session_id: UUID, event_seq: int, expiry: datetime) -> dict[str, Any]:
@@ -94,7 +98,9 @@ def build_verifiable_session(
     for event, (prev, current) in zip(events, chain_events(TEST_CHAIN_KEY, events)):
         event["prev_event_hash"] = prev
         event["event_hash"] = current
-    assert verify_chain(TEST_CHAIN_KEY, events).ok, "builder produced an unverifiable session"
+    assert verify_chain(TEST_CHAIN_KEY, events).ok, (
+        "builder produced an unverifiable session"
+    )
     return events
 
 
@@ -200,7 +206,13 @@ class FakeConnection:
         return out[:limit]
 
 
-def sweep(conn: FakeConnection, *, days: int = 7, dry_run: bool = False, limit: int | None = None):
+def sweep(
+    conn: FakeConnection,
+    *,
+    days: int = 7,
+    dry_run: bool = False,
+    limit: int | None = None,
+):
     """Run one sweep synchronously.
 
     ``asyncio.run`` rather than ``pytest.mark.asyncio``: it keeps this suite independent of a plugin's
@@ -235,7 +247,9 @@ class TestWhyWholeSessionDeletion:
         assert result.first_bad_index == 0
         assert result.detail == "prev_event_hash does not match the recomputed chain"
 
-    def test_a_prefix_delete_is_indistinguishable_from_a_truncation_attack(self) -> None:
+    def test_a_prefix_delete_is_indistinguishable_from_a_truncation_attack(
+        self,
+    ) -> None:
         """This is the whole argument, in one assertion.
 
         Retention removing the first two rows and an attacker removing the first two rows to hide them
@@ -281,7 +295,11 @@ class TestWhyWholeSessionDeletion:
         """The precondition that makes whole-session deletion safe. A session with one live row is not
         touched at all — not even its expired rows."""
         mixed = uuid4()
-        table = [make_row(mixed, 0, EXPIRED), make_row(mixed, 1, EXPIRED), make_row(mixed, 2, LIVE)]
+        table = [
+            make_row(mixed, 0, EXPIRED),
+            make_row(mixed, 1, EXPIRED),
+            make_row(mixed, 2, LIVE),
+        ]
         receipt = sweep(FakeConnection(table))
         assert (receipt.sessions_examined, receipt.sessions_deleted) == (0, 0)
 
@@ -300,7 +318,9 @@ class TestWhyWholeSessionDeletion:
 
 class TestSessionPlan:
     def test_overshoot_is_the_span_between_first_and_last_expiry(self) -> None:
-        plan = rw.SessionPlan(uuid4(), 2, 0, 1, EXPIRED - timedelta(seconds=90), EXPIRED)
+        plan = rw.SessionPlan(
+            uuid4(), 2, 0, 1, EXPIRED - timedelta(seconds=90), EXPIRED
+        )
         assert plan.overshoot_seconds == 90
 
     def test_a_single_event_session_overshoots_by_nothing(self) -> None:
@@ -385,7 +405,15 @@ class TestReceiptContainsNoPersonalData:
     @pytest.mark.privacy
     @pytest.mark.parametrize(
         "leak",
-        ["call_ref", "purpose_code", "spoof_risk", "risk_state", "action", "tenant_id", "client"],
+        [
+            "call_ref",
+            "purpose_code",
+            "spoof_risk",
+            "risk_state",
+            "action",
+            "tenant_id",
+            "client",
+        ],
     )
     def test_no_evidence_field_leaks_into_the_receipt(self, leak: str) -> None:
         """A receipt is written to stdout and to CI logs, which are far less protected than the audit
@@ -446,7 +474,9 @@ class TestReceiptAccountsForEverything:
             for _ in range(rw.MAX_RECEIPT_SESSION_IDS + 3)
         ]
         receipt = sample_receipt(deleted=plans)
-        assert receipt.deleted_session_digest == rw.digest_of([str(p.session_id) for p in plans])
+        assert receipt.deleted_session_digest == rw.digest_of(
+            [str(p.session_id) for p in plans]
+        )
         assert receipt.deleted_session_digest != rw.digest_of(list(receipt.session_ids))
 
     def test_the_digest_is_order_independent(self) -> None:
@@ -552,7 +582,8 @@ class TestSafeToRunTwice:
         the extra ``count(*)`` inside the transaction is worth its cost."""
         session_id = uuid4()
         conn = FakeConnection(
-            [make_row(session_id, seq, EXPIRED) for seq in range(3)], delete_partially=True
+            [make_row(session_id, seq, EXPIRED) for seq in range(3)],
+            delete_partially=True,
         )
         with pytest.raises(rw.RetentionError, match="partially deleted session"):
             sweep(conn)
@@ -600,19 +631,33 @@ class TestSqlSafetyProperties:
         regresses is a second statement added later for a "quick cleanup".
         """
         for name, statement in vars(rw).items():
-            if not name.isupper() or not isinstance(statement, str) or "DELETE" not in statement:
+            if (
+                not name.isupper()
+                or not isinstance(statement, str)
+                or "DELETE" not in statement
+            ):
                 continue
-            assert "session_id = $1" in statement, f"{name} deletes without a session scope"
+            assert "session_id = $1" in statement, (
+                f"{name} deletes without a session scope"
+            )
 
     def test_the_expiry_predicate_uses_max_not_min(self) -> None:
         """``HAVING min(retention_expires_at) <= $1`` would select every session with *any* expired row
         — the naive delete wearing an aggregate. The one-character difference is the whole design."""
-        assert "HAVING max(retention_expires_at) <= $1" in rw.SELECT_FULLY_EXPIRED_SESSIONS
+        assert (
+            "HAVING max(retention_expires_at) <= $1" in rw.SELECT_FULLY_EXPIRED_SESSIONS
+        )
         assert "HAVING min(" not in rw.SELECT_FULLY_EXPIRED_SESSIONS
 
     def test_the_planner_selects_no_evidence_columns(self) -> None:
         """A planner that selected ``call_ref`` would put pseudonyms in a query log for no reason."""
-        for column in ("call_ref", "purpose_code", "spoof_risk", "action", "reason_code"):
+        for column in (
+            "call_ref",
+            "purpose_code",
+            "spoof_risk",
+            "action",
+            "reason_code",
+        ):
             assert column not in rw.SELECT_FULLY_EXPIRED_SESSIONS
 
     def test_every_statement_is_parameterised(self) -> None:
@@ -639,7 +684,9 @@ class TestSqlSafetyProperties:
         the lock does not serialise anything."""
         from hashlib import sha256
 
-        expected = int.from_bytes(sha256(b"sih26104.audit_retention").digest()[:8], "big", signed=True)
+        expected = int.from_bytes(
+            sha256(b"sih26104.audit_retention").digest()[:8], "big", signed=True
+        )
         assert rw.ADVISORY_LOCK_KEY == expected
 
 
@@ -650,7 +697,9 @@ class TestCli:
         assert rw._parse_args([]).dry_run is False
         assert rw._parse_args(["--dry-run"]).dry_run is True
 
-    def test_retention_days_comes_from_the_environment_when_not_passed(self, monkeypatch) -> None:
+    def test_retention_days_comes_from_the_environment_when_not_passed(
+        self, monkeypatch
+    ) -> None:
         """Same variable name the Gateway uses, so the tier is configuration rather than a code
         branch (R-04)."""
         monkeypatch.setenv("AUDIT_RETENTION_DAYS", "30")
@@ -682,18 +731,30 @@ class TestAgainstARealDatabase:
     leaves the table byte-identical."""
 
     @pytest.mark.integration
-    def test_a_fully_expired_session_is_deleted_and_survivors_verify(self, database_url: str) -> None:
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+    def test_a_fully_expired_session_is_deleted_and_survivors_verify(
+        self, database_url: str
+    ) -> None:
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
     @pytest.mark.integration
-    def test_a_concurrent_sweep_is_blocked_by_the_advisory_lock(self, database_url: str) -> None:
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+    def test_a_concurrent_sweep_is_blocked_by_the_advisory_lock(
+        self, database_url: str
+    ) -> None:
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
     @pytest.mark.integration
-    def test_the_planner_uses_the_session_retention_index(self, database_url: str) -> None:
+    def test_the_planner_uses_the_session_retention_index(
+        self, database_url: str
+    ) -> None:
         """``EXPLAIN`` must show an index scan, not a sequential scan plus sort. A retention job that
         table-scans is one that gets disabled the first time it is blamed for latency."""
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
 
 def sample_receipt(deleted: Sequence[rw.SessionPlan] = ()) -> rw.RetentionReceipt:

@@ -79,7 +79,9 @@ COLUMNS: Final[tuple[Column, ...]] = (
     # hex below — the database is the last boundary before a raw reference becomes durable.
     Column("call_ref", "text", False, "text", "text"),
     Column("event_seq", "bigint", False, "bigint", "int8"),
-    Column("occurred_at", "timestamptz", False, "timestamp with time zone", "timestamptz"),
+    Column(
+        "occurred_at", "timestamptz", False, "timestamp with time zone", "timestamptz"
+    ),
     Column("purpose_code", "text", False, "text", "text"),
     Column("context_value_band", "text", False, "text", "text"),
     # NULL for lifecycle events, which have no window. Distinct from 0 in the hash input.
@@ -87,8 +89,13 @@ COLUMNS: Final[tuple[Column, ...]] = (
     # numeric(5,4), matching chain.py's fixed 4-decimal serialization. A float column would round-trip
     # to a different repr and every stored hash would stop verifying.
     Column(
-        "spoof_risk", "numeric(5,4)", True, "numeric", "numeric",
-        numeric_precision=5, numeric_scale=4,
+        "spoof_risk",
+        "numeric(5,4)",
+        True,
+        "numeric",
+        "numeric",
+        numeric_precision=5,
+        numeric_scale=4,
     ),
     Column("risk_state", "text", False, "text", "text"),
     Column("action", "text", False, "text", "text"),
@@ -110,7 +117,13 @@ COLUMNS: Final[tuple[Column, ...]] = (
     Column("prev_event_hash", "bytea", False, "bytea", "bytea"),
     Column("event_hash", "bytea", False, "bytea", "bytea"),
     # Excluded from the hash so a retention-policy change does not invalidate history.
-    Column("retention_expires_at", "timestamptz", False, "timestamp with time zone", "timestamptz"),
+    Column(
+        "retention_expires_at",
+        "timestamptz",
+        False,
+        "timestamp with time zone",
+        "timestamptz",
+    ),
 )
 
 COLUMN_NAMES: Final[tuple[str, ...]] = tuple(c.name for c in COLUMNS)
@@ -142,10 +155,21 @@ ACTION_VOCABULARY: Final[tuple[str, ...]] = ("continue", "verify", "hold", "esca
 
 #: Values that must not appear as an accepted value anywhere in the schema. ``approve``/``deny`` are
 #: named by R-07; the other three are the synonyms a well-meaning contributor reaches for next.
-FORBIDDEN_ACTION_VALUES: Final[tuple[str, ...]] = ("approve", "deny", "allow", "block", "reject")
+FORBIDDEN_ACTION_VALUES: Final[tuple[str, ...]] = (
+    "approve",
+    "deny",
+    "allow",
+    "block",
+    "reject",
+)
 
 RISK_STATE_VOCABULARY: Final[tuple[str, ...]] = ("collecting", "uncertain", "high")
-CONTEXT_VALUE_BAND_VOCABULARY: Final[tuple[str, ...]] = ("low", "medium", "high", "unspecified")
+CONTEXT_VALUE_BAND_VOCABULARY: Final[tuple[str, ...]] = (
+    "low",
+    "medium",
+    "high",
+    "unspecified",
+)
 EXECUTION_PROVIDER_VOCABULARY: Final[tuple[str, ...]] = (
     "CUDAExecutionProvider",
     "CPUExecutionProvider",
@@ -392,12 +416,23 @@ FORBIDDEN_COLUMN_SUBSTRINGS: Final[tuple[str, ...]] = (
 )
 
 #: §5.2 rule 2. The only two bytea columns that may exist.
-PERMITTED_BYTEA_COLUMNS: Final[frozenset[str]] = frozenset({"prev_event_hash", "event_hash"})
+PERMITTED_BYTEA_COLUMNS: Final[frozenset[str]] = frozenset(
+    {"prev_event_hash", "event_hash"}
+)
 
 #: §5.2 rule 3. ``vector`` is the pgvector type; the float arrays are how an embedding arrives when
 #: pgvector is not installed. Matched on the reflected ``udt_name``, so the DDL spelling is irrelevant.
 FORBIDDEN_UDT_NAMES: Final[frozenset[str]] = frozenset(
-    {"vector", "halfvec", "sparsevec", "_float4", "_float8", "_numeric", "_bytea", "_int2"}
+    {
+        "vector",
+        "halfvec",
+        "sparsevec",
+        "_float4",
+        "_float8",
+        "_numeric",
+        "_bytea",
+        "_int2",
+    }
 )
 
 #: §5.2 rule 4.
@@ -467,9 +502,7 @@ def deny_list_violations(facts: Iterable[ColumnFact]) -> list[str]:
     violations: list[str] = []
 
     for fact, hit in (
-        (f, h)
-        for f in facts
-        for _, h in forbidden_substring_hits([f.column_name])
+        (f, h) for f in facts for _, h in forbidden_substring_hits([f.column_name])
     ):
         violations.append(
             f"rule 1 (forbidden name): {fact.table_name}.{fact.column_name} contains {hit!r}"
@@ -493,9 +526,11 @@ def deny_list_violations(facts: Iterable[ColumnFact]) -> list[str]:
                 f"{MAX_UNLISTED_COLUMN_BYTES} bytes and is not on the §5.1 allow-list"
             )
 
-    violations.extend(allow_list_violations(
-        f.column_name for f in facts if f.table_name == TABLE_NAME
-    ))
+    violations.extend(
+        allow_list_violations(
+            f.column_name for f in facts if f.table_name == TABLE_NAME
+        )
+    )
     return violations
 
 
@@ -559,12 +594,22 @@ def _self_check() -> None:
     *and* the migration together) would pass every per-column check.
     """
     assert len(COLUMN_NAMES) == len(set(COLUMN_NAMES)), "duplicate column name"
-    assert set(UNCHAINED_COLUMNS) <= set(COLUMN_NAMES), "unchained column not on the allow-list"
-    assert not (set(CHAINED_COLUMNS) & set(UNCHAINED_COLUMNS)), "column both chained and excluded"
+    assert set(UNCHAINED_COLUMNS) <= set(COLUMN_NAMES), (
+        "unchained column not on the allow-list"
+    )
+    assert not (set(CHAINED_COLUMNS) & set(UNCHAINED_COLUMNS)), (
+        "column both chained and excluded"
+    )
     assert len(CHAINED_COLUMNS) + len(UNCHAINED_COLUMNS) == len(COLUMN_NAMES)
-    assert not forbidden_substring_hits(COLUMN_NAMES), "the allow-list itself trips the deny-list"
-    assert not deny_list_violations(declared_column_facts()), "the declared schema is not clean"
-    assert not (set(ACTION_VOCABULARY) & set(FORBIDDEN_ACTION_VALUES)), "R-07 violated in-module"
+    assert not forbidden_substring_hits(COLUMN_NAMES), (
+        "the allow-list itself trips the deny-list"
+    )
+    assert not deny_list_violations(declared_column_facts()), (
+        "the declared schema is not clean"
+    )
+    assert not (set(ACTION_VOCABULARY) & set(FORBIDDEN_ACTION_VALUES)), (
+        "R-07 violated in-module"
+    )
     names = [c.name for c in (*CHECK_CONSTRAINTS, *UNIQUE_CONSTRAINTS, *INDEXES)]
     assert len(names) == len(set(names)), "duplicate constraint or index name"
 

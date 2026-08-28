@@ -57,7 +57,9 @@ def _database_url() -> str:
     normalized = _SYNC_SCHEMES.sub("postgresql+asyncpg://", url)
     if normalized != url:
         # Printed, not silent. A driver rewrite that nobody can see is a rewrite nobody can debug.
-        print(f"[alembic] rewrote the URL scheme to asyncpg (the only pinned driver): {url.split('://')[0]}:// -> postgresql+asyncpg://")
+        print(
+            f"[alembic] rewrote the URL scheme to asyncpg (the only pinned driver): {url.split('://')[0]}:// -> postgresql+asyncpg://"
+        )
     return normalized
 
 
@@ -86,7 +88,9 @@ def _do_run_migrations(connection: Connection) -> None:
 async def _run_async_migrations() -> None:
     section = config.get_section(config.config_ini_section, {})
     section["sqlalchemy.url"] = _database_url()
-    connectable = async_engine_from_config(section, prefix="sqlalchemy.", poolclass=pool.NullPool)
+    connectable = async_engine_from_config(
+        section, prefix="sqlalchemy.", poolclass=pool.NullPool
+    )
     try:
         async with connectable.connect() as connection:
             await connection.run_sync(_do_run_migrations)

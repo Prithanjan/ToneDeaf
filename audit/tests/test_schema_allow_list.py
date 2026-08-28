@@ -95,7 +95,9 @@ def openapi_enum(name: str) -> tuple[str, ...]:
     assert block, f"{name} not found in contracts/openapi.yaml"
     values = re.search(r"enum:\s*\[(.*?)\]", block.group(1), re.DOTALL)
     assert values, f"{name} has no enum in contracts/openapi.yaml"
-    return tuple(v.strip() for v in values.group(1).replace("\n", " ").split(",") if v.strip())
+    return tuple(
+        v.strip() for v in values.group(1).replace("\n", " ").split(",") if v.strip()
+    )
 
 
 class TestAllowList:
@@ -117,8 +119,12 @@ class TestAllowList:
     def test_declared_types_match_the_spec(self) -> None:
         for name, sql_type, nullable in SPEC_5_1:
             column = sc.COLUMNS_BY_NAME[name]
-            assert column.sql_type == sql_type, f"{name}: {column.sql_type!r} != {sql_type!r}"
-            assert column.nullable is nullable, f"{name}: nullability disagrees with §5.1"
+            assert column.sql_type == sql_type, (
+                f"{name}: {column.sql_type!r} != {sql_type!r}"
+            )
+            assert column.nullable is nullable, (
+                f"{name}: nullability disagrees with §5.1"
+            )
 
     def test_only_window_seq_and_spoof_risk_are_nullable(self) -> None:
         """Lifecycle events have no window and no score; everything else is always known at write
@@ -136,10 +142,14 @@ class TestAllowList:
         assert sc.COLUMNS_BY_NAME["quality_flags"].default == "'{}'::text[]"
 
     @pytest.mark.integration
-    def test_deployed_columns_are_exactly_the_allow_list(self, database_url: str) -> None:
+    def test_deployed_columns_are_exactly_the_allow_list(
+        self, database_url: str
+    ) -> None:
         """UNVERIFIED without PostgreSQL 16. This is the assertion §5.2 actually specifies — against
         information_schema, so a migration that was written but never applied fails here."""
-        pytest.skip(f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md")
+        pytest.skip(
+            f"needs a live database via {DATABASE_URL_ENV}; see audit/README.md"
+        )
 
 
 class TestWriterAgreement:
@@ -167,28 +177,38 @@ class TestWriterAgreement:
         actually happens: someone appends a column name to ``_INSERT_COLUMNS`` for a field they added
         to the writer but not to a migration.
         """
-        source = (GATEWAY_DIR / "app" / "audit" / "writer.py").read_text(encoding="utf-8")
-        literal = re.search(r"_INSERT_COLUMNS: tuple\[str, \.\.\.\] = \((.*?)\n\)", source, re.DOTALL)
+        source = (GATEWAY_DIR / "app" / "audit" / "writer.py").read_text(
+            encoding="utf-8"
+        )
+        literal = re.search(
+            r"_INSERT_COLUMNS: tuple\[str, \.\.\.\] = \((.*?)\n\)", source, re.DOTALL
+        )
         assert literal, "could not find _INSERT_COLUMNS in gateway/app/audit/writer.py"
         body = literal.group(1)
         names = set(re.findall(r'"(\w+)"', body))
         if "*CHAIN_FIELDS" in body:
             names |= set(CHAIN_FIELDS)
         assert names == set(sc.COLUMN_NAMES), {
-            "writer_inserts_columns_that_do_not_exist": sorted(names - set(sc.COLUMN_NAMES)),
+            "writer_inserts_columns_that_do_not_exist": sorted(
+                names - set(sc.COLUMN_NAMES)
+            ),
             "columns_the_writer_never_populates": sorted(set(sc.COLUMN_NAMES) - names),
         }
 
     def test_every_column_is_either_hashed_or_deliberately_excluded(self) -> None:
         """No third category. A column that is neither hashed nor on the documented exclusion list is
         stored-but-unverified — data inside the evidence table and outside the tamper evidence."""
-        assert set(sc.CHAINED_COLUMNS) | set(sc.UNCHAINED_COLUMNS) == set(sc.COLUMN_NAMES)
+        assert set(sc.CHAINED_COLUMNS) | set(sc.UNCHAINED_COLUMNS) == set(
+            sc.COLUMN_NAMES
+        )
 
 
 class TestActionVocabulary:
     """R-07, enforced at the database boundary as well as in the enum and the OpenAPI schema."""
 
-    def test_action_check_accepts_exactly_four_values(self, create_table_sql: str) -> None:
+    def test_action_check_accepts_exactly_four_values(
+        self, create_table_sql: str
+    ) -> None:
         assert sc.ACTION_VOCABULARY == ("continue", "verify", "hold", "escalate")
         assert (
             "CONSTRAINT ck_audit_event_action_vocabulary CHECK "
@@ -235,12 +255,16 @@ class TestActionVocabulary:
         assert set(openapi_enum(schema_name)) == set(vocabulary)
 
     @pytest.mark.contract
-    def test_quality_flag_vocabulary_is_the_contract_enum_plus_the_proto_zero_value(self) -> None:
+    def test_quality_flag_vocabulary_is_the_contract_enum_plus_the_proto_zero_value(
+        self,
+    ) -> None:
         """``app.scorer.client`` maps proto enum numbers through ``QualityFlag.Name``, so
         ``QUALITY_FLAG_UNSPECIFIED`` is reachable and must be accepted. Everything else must match the
         contract exactly — a flag the database rejects closes the stream mid-demo."""
         contract = set(openapi_enum("QualityFlag"))
-        assert set(sc.QUALITY_FLAG_VOCABULARY) - contract == {"QUALITY_FLAG_UNSPECIFIED"}
+        assert set(sc.QUALITY_FLAG_VOCABULARY) - contract == {
+            "QUALITY_FLAG_UNSPECIFIED"
+        }
         assert contract - set(sc.QUALITY_FLAG_VOCABULARY) == set()
 
     def test_purpose_code_is_shape_checked_not_membership_checked(
@@ -255,7 +279,9 @@ class TestActionVocabulary:
         """
         assert "purpose_code ~ '^[a-z][a-z0-9_]{2,63}$'" in create_table_sql
         for purpose in openapi_enum("PurposeCode"):
-            assert re.match(sc.LOWER_SNAKE_REGEX, purpose), f"{purpose} would be rejected by the CHECK"
+            assert re.match(sc.LOWER_SNAKE_REGEX, purpose), (
+                f"{purpose} would be rejected by the CHECK"
+            )
 
 
 class TestCallRefConstraint:
@@ -281,7 +307,9 @@ class TestCallRefConstraint:
     def test_the_pattern_rejects_things_that_are_not_pseudonyms(self, raw: str) -> None:
         """The regex is the constraint's whole content, so it is worth testing as a regex. Every value
         here is something a well-meaning integration would plausibly put in ``client_call_ref``."""
-        assert not re.match(sc.HEX64_REGEX, raw), f"{raw!r} would be accepted as a call_ref"
+        assert not re.match(sc.HEX64_REGEX, raw), (
+            f"{raw!r} would be accepted as a call_ref"
+        )
 
     def test_the_pattern_accepts_a_real_pseudonym(self) -> None:
         assert re.match(sc.HEX64_REGEX, "a3f" + "0" * 61)
@@ -302,7 +330,9 @@ class TestCallRefConstraint:
         assert not re.fullmatch(pattern, "unknown")
         assert not re.fullmatch(pattern, "sha256:abc")
 
-    def test_a_real_detector_must_carry_a_model_digest(self, create_table_sql: str) -> None:
+    def test_a_real_detector_must_carry_a_model_digest(
+        self, create_table_sql: str
+    ) -> None:
         """R-03/R-51. An unattributable score may appear in the evidence only alongside a non-real
         detector mode, so it can never be cited as a measured result."""
         assert (
@@ -335,7 +365,10 @@ class TestChainColumns:
     def test_session_seq_is_unique(self, create_table_sql: str) -> None:
         """Two writers computing ``event_seq`` from the same predecessor fork the chain, which a
         verifier reports as tampering. The unique constraint makes the second insert fail instead."""
-        assert "CONSTRAINT uq_audit_event_session_seq UNIQUE (session_id, event_seq)" in create_table_sql
+        assert (
+            "CONSTRAINT uq_audit_event_session_seq UNIQUE (session_id, event_seq)"
+            in create_table_sql
+        )
 
 
 class TestIndexes:
@@ -348,7 +381,10 @@ class TestIndexes:
 
     def test_retention_sweep_has_both_indexes_it_needs(self) -> None:
         names = {index.name for index in sc.INDEXES}
-        assert names == {"ix_audit_event_session_retention", "ix_audit_event_retention_expires_at"}
+        assert names == {
+            "ix_audit_event_session_retention",
+            "ix_audit_event_retention_expires_at",
+        }
 
     def test_every_index_records_why_it_exists(self) -> None:
         """An index with no stated reason is one nobody can safely drop later."""
@@ -372,7 +408,9 @@ class TestMigrationDiscipline:
             f"express the change as its own revision. Found: {[f.name for f in files]}"
         )
 
-    def test_head_revision_identifies_itself_readably(self, head_revision: ModuleType) -> None:
+    def test_head_revision_identifies_itself_readably(
+        self, head_revision: ModuleType
+    ) -> None:
         """``migration_head`` is reported by ``GET /api/v1/version`` as part of the parity set, and
         somebody has to compare two tiers by eye."""
         assert head_revision.revision == "0001_audit_event"
@@ -394,9 +432,13 @@ class TestMigrationDiscipline:
         place the column list lives — so autogenerate is refused rather than merely discouraged."""
         env = (Path(sc.__file__).parent / "env.py").read_text(encoding="utf-8")
         assert "target_metadata = None" in env
-        assert "autogenerate" in env.lower(), "env.py must document why autogenerate is unavailable"
+        assert "autogenerate" in env.lower(), (
+            "env.py must document why autogenerate is unavailable"
+        )
 
-    def test_downgrade_states_the_recovery_path(self, head_revision: ModuleType) -> None:
+    def test_downgrade_states_the_recovery_path(
+        self, head_revision: ModuleType
+    ) -> None:
         """Dropping this table destroys evidence, and the chain key must not be rotated to match. A
         downgrade docstring that only describes DDL leaves the operator to work that out live."""
         doc = head_revision.downgrade.__doc__ or ""
