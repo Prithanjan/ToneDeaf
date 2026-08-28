@@ -1870,3 +1870,20 @@ For a cold pickup. Ordered by what unblocks the most.
    - Fixed `vite.config.ts` preview proxy to target Gateway container on `http://127.0.0.1:8080`.
    - Added local demo token grant fallback in `pwa/src/lib/auth.ts` to eliminate `AUTH_UNCONFIGURED` errors when testing without an IdP.
    - Added `SimulatedCaptureSession` fallback in `pwa/src/lib/capture.ts` for non-secure HTTP mobile contexts (`http://10.21.100.126:4173`), enabling live streaming and risk timeline testing on any mobile device without browser `getUserMedia` security blocks.
+
+---
+
+## 17. AWS Cloud Infrastructure Deployment & Telephony Far-End Audio Bridge (2026-08-28)
+
+1. **AWS Cloud Infrastructure Deployed**:
+   - Stacks deployed to AWS account `075213340955` in `ap-south-1` & `us-east-1`:
+     - `NetworkStack`: VPC, public/private subnets, Security Groups.
+     - `DataStack`: PostgreSQL RDS database & migration role.
+     - `SecretsStack`: Secrets Manager ARNs (`sih26104/audit-chain-key`, `sih26104/database-url`, `sih26104/hmac-key`, `sih26104/ticket-signing-key`).
+     - `CostSafetyStack`: Target us-east-1 SNS topic (`arn:aws:sns:us-east-1:075213340955:sih26104-budget-alarm`) & `sih26104-runtime-stopper` Lambda function.
+     - `ComputeStack`: ECS Cluster `sih26104`, internal Gateway ALB (`internal-Comput-Gatew-i8ICuTmoGxj5-1577789454.ap-south-1.elb.amazonaws.com`), and Service Discovery (`scorer.sih26104.local:50051`).
+
+2. **Automated Telephony Far-End Audio Stream Bridge**:
+   - Created `pwa/src/lib/telephony_bridge.ts` (`TelephonyFarEndCaptureSession`).
+   - Isolates channel 1 (remote far-end caller audio) from 2-channel WebRTC / SIP call streams via Web Audio `ChannelSplitterNode`.
+   - Automatically mutes local operator microphone audio (channel 0) so the Gateway and AASIST model score strictly the caller on the other end of the line hands-free.
