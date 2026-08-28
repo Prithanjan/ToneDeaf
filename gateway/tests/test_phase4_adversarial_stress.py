@@ -542,6 +542,7 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
     async def test_audit_endpoint_valid_retrieval(self) -> None:
         """Verify successful audit trail retrieval via GET /api/v1/sessions/{session_id}/audit."""
         app, record, registry, audit = _make_app()
+        client = TestClient(app)
         session_id = str(record.session_id)
 
         # Seed 3 audit events
@@ -573,7 +574,6 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
                 },
             )
 
-        client = TestClient(app)
         resp = client.get(
             f"/api/v1/sessions/{session_id}/audit",
             headers={"authorization": "Bearer valid-token"},
@@ -589,6 +589,7 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
     async def test_audit_endpoint_tampered_detection(self) -> None:
         """Verify audit endpoint reports chain_verified=False and identifies first bad seq on tampered rows."""
         app, record, registry, audit = _make_app()
+        client = TestClient(app)
         session_id = str(record.session_id)
 
         # Seed 4 audit events
@@ -623,7 +624,6 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
         # Tamper row at index 2
         audit.rows[2]["action"] = "escalate"
 
-        client = TestClient(app)
         resp = client.get(
             f"/api/v1/sessions/{session_id}/audit",
             headers={"authorization": "Bearer valid-token"},
