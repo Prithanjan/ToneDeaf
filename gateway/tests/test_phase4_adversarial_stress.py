@@ -298,7 +298,10 @@ def _make_app(
     app.state.registry = registry
     app.state.replay_cache = ReplayCache(clock=_now)
     app.state.diagnostics = ws_stream.DiagnosticsSidecar(enabled=False)
+    from gateway.app.api.deps import get_audit
+
     app.state.audit = audit
+    app.dependency_overrides[get_audit] = lambda: audit
     app.state.scorer = _MockScorer()
     app.state.scorer_health = SimpleNamespace(
         model_version="mock-v1",

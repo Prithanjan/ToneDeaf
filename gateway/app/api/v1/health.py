@@ -17,7 +17,13 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
-from app.api.deps import CurrentPolicy, CurrentPrincipal, CurrentRegistry, CurrentSettings
+from app.api.deps import (
+    CurrentAudit,
+    CurrentPolicy,
+    CurrentPrincipal,
+    CurrentRegistry,
+    CurrentSettings,
+)
 from app.scorer.client import ScorerUnavailable
 from app.session_registry import SessionError
 
@@ -143,9 +149,9 @@ async def version(
 @router.get("/api/v1/sessions/{session_id}/audit", tags=["audit"])
 async def session_audit(
     session_id: str,
-    request: Request,
     principal: CurrentPrincipal,
     registry: CurrentRegistry,
+    audit: CurrentAudit,
 ) -> dict[str, object]:
     """Feature-only audit trail. Phase 4 renders this in the Privacy Inspector.
 
@@ -160,13 +166,11 @@ async def session_audit(
             detail={"code": "SESSION_UNKNOWN", "message": "unknown session"},
         ) from exc
 
-    ok, first_bad_seq = await request.app.state.audit.verify_session(session_id)
+    ok, first_bad_seq = await audit.verify_session(session_id)
+    events = await audit.fetch_session_events(session_id)
     return {
         "session_id": session_id,
         "chain_verified": ok,
         "first_divergent_event_seq": first_bad_seq,
-        # Phase 4 fills this from the allow-listed columns. Returning an empty list in Phase 1 is
-        # honest; returning a plausible-looking stub would not be (rules.md R-01).
-        "events": [],
-        "phase_note": "event listing lands in Phase 4; chain verification is live now",
+        "events": events,
     }

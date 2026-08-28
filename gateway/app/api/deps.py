@@ -8,7 +8,7 @@ first-window latency on every session.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
@@ -39,6 +39,10 @@ def get_validator(request: Request) -> TokenValidator:
     return request.app.state.token_validator
 
 
+def get_audit(request: Request) -> Any:
+    return request.app.state.audit
+
+
 async def require_principal(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
@@ -64,3 +68,4 @@ CurrentSettings = Annotated[Settings, Depends(get_settings_dep)]
 CurrentPolicy = Annotated[PolicyBundle, Depends(get_policy)]
 CurrentRegistry = Annotated[SessionRegistry, Depends(get_registry)]
 CurrentScorer = Annotated[ScorerClient, Depends(get_scorer)]
+CurrentAudit = Annotated[Any, Depends(get_audit)]
