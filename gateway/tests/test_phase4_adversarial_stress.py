@@ -523,7 +523,7 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
                 session_id,
                 {
                     "tenant_id": "demo-tenant",
-                    "session_id": record.session_id,
+                    "session_id": session_id,
                     "call_ref": CALL_REF,
                     "occurred_at": datetime.now(tz=UTC),
                     "purpose_code": PURPOSE,
@@ -570,7 +570,7 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
                 session_id,
                 {
                     "tenant_id": "demo-tenant",
-                    "session_id": record.session_id,
+                    "session_id": session_id,
                     "call_ref": CALL_REF,
                     "occurred_at": datetime.now(tz=UTC),
                     "purpose_code": PURPOSE,
