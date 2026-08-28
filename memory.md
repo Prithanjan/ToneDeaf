@@ -1916,3 +1916,18 @@ For a cold pickup. Ordered by what unblocks the most.
    - Executed live WebSocket test streaming 200 PCM speech frames to Gateway (`:8080`).
    - Received live events: `risk.event` with `window_seq: 0`, `window_seq: 1`, `window_seq: 2`, `spoof_risk: 1.0`, `eligible: true`.
    - All fixes committed (`d75f7db`) and pushed to `main`.
+
+---
+
+## 20. Frontend Redesign (Taste-Skill) & Microphone Diagnostic Visualizer (2026-08-28)
+
+1. **Taste Skill Installed**:
+   - Installed `npx skills add https://github.com/Leonxlnx/taste-skill` (13 design taste packages).
+   - Applied `design-taste-frontend` rules: Geist Mono / Sans typography, industrial dark theme (`#09090b`), high-contrast indicator badges, zero generic AI purple slop.
+
+2. **Microphone Permission & Hardware Diagnostics**:
+   - Created `pwa/src/components/AudioVisualizer.tsx`:
+     - Real-time `navigator.permissions` detector (`Granted ✅` / `Blocked 🛑` / `Prompt ⚠️`).
+     - Explicit step-by-step browser unblock instructions when Chrome/Safari blocks plain HTTP `getUserMedia`.
+     - Live 60 FPS Canvas Oscilloscope & VU Volume Level meter bar (`0-100% dBFS`, green -> yellow -> red peak) to confirm live audio capture.
+     - **Fallback Telephony Stream Test button**: Allows instant testing of live AI scoring engine even when local OS/browser blocks microphone hardware.
