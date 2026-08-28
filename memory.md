@@ -1793,7 +1793,7 @@ For a cold pickup. Ordered by what unblocks the most.
 
 3. **Database Migration Verified (§8)**:
    - Assembled live RDS PostgreSQL connection string in `sih26104/database-url` secret.
-   - Ran one-shot Fargate migration task `gateway-migrate` (`arn:aws:ecs:ap-south-1:075213340955:task/sih26104/f7b4252a23c34692a2a6937671060880`).
+   - Ran one-shot Fargate migration task `gateway-migrate` (`arn:aws:ecs:ap-south-1:<ACCOUNT_ID>:task/sih26104/f7b4252a23c34692a2a6937671060880`).
    - Alembic applied revision `0001_audit_event` (`audit_event` hash-chained evidence table) successfully. Exit code: 0.
 
 4. **Cognito User Pool & Public App Client Provisioned (§10)**:
@@ -1820,11 +1820,11 @@ For a cold pickup. Ordered by what unblocks the most.
    - Calibration artifact: `policy/calibration.json` updated with paired `model_sha256: 45d6eefefcf7db52cf8c3548a796d114392212935822b9cac8c1cfa451a48505`.
 
 3. **Docker Images Rebuilt & Pushed to AWS ECR (Tag: `v0.2.0-aasist`)**:
-   - `075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/gateway:v0.2.0-aasist` (`sha256:03825f0cf8c94af5e48ac5d7354acb8e0ca2c9d89854a25ada3170c28907b219`)
-   - `075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-cpu:v0.2.0-aasist` (`sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`)
-   - `075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-gpu:v0.2.0-aasist` (`sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`)
+   - `<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/sih26104/gateway:v0.2.0-aasist` (`sha256:03825f0cf8c94af5e48ac5d7354acb8e0ca2c9d89854a25ada3170c28907b219`)
+   - `<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-cpu:v0.2.0-aasist` (`sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`)
+   - `<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-gpu:v0.2.0-aasist` (`sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`)
 
 4. **Live AWS ECS Fargate CPU Verification**:
-   - Launched Fargate task `scorer-cpu-live-test:3` in private subnet `subnet-04e572d19700a1efe` (`arn:aws:ecs:ap-south-1:075213340955:task/sih26104/0fbfd80d1a924d3ebc54f2b2ee33f764`).
+   - Launched Fargate task `scorer-cpu-live-test:3` in private subnet `subnet-04e572d19700a1efe` (`arn:aws:ecs:ap-south-1:<ACCOUNT_ID>:task/sih26104/0fbfd80d1a924d3ebc54f2b2ee33f764`).
    - Scorer loaded `aasist.onnx`, matched `model_sha256`, scored real 40,960 PCM sample window, and applied Platt scaling to produce calibrated risk `0.7006`.
    - **Exit code: 0. All checks passed on AWS Fargate.**

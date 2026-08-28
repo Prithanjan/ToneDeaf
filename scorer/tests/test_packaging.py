@@ -319,7 +319,7 @@ class TestRuntimeLayerIsMinimal:
             if source.startswith(("/", "$")):
                 continue
             assert source.startswith(
-                ("scorer/", "contracts/", "ml/")
+                ("scorer/", "contracts/", "ml/", "policy/")
             ), f"COPY source {source!r} is not repo-root-relative"
 
 
