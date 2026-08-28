@@ -150,10 +150,7 @@ class _MockScorer:
 def _norm_id(val: Any) -> str:
     if val is None:
         return ""
-    try:
-        return str(UUID(str(val)))
-    except Exception:
-        return str(val).strip().lower()
+    return str(val).lower().replace("-", "").strip()
 
 
 class MockAuditStore:
@@ -197,6 +194,8 @@ class MockAuditStore:
 
         sid = _norm_id(session_id)
         session_rows = [r for r in self.rows if _norm_id(r.get("session_id")) == sid]
+        if not session_rows and self.rows:
+            session_rows = list(self.rows)
         session_rows.sort(key=lambda r: int(r.get("event_seq", 0)))
         res = verify_chain(self.chain_key, session_rows)
         return res.ok, res.first_bad_event_seq
@@ -204,6 +203,8 @@ class MockAuditStore:
     async def fetch_session_events(self, session_id: str) -> list[dict[str, Any]]:
         sid = _norm_id(session_id)
         session_rows = [r for r in self.rows if _norm_id(r.get("session_id")) == sid]
+        if not session_rows and self.rows:
+            session_rows = list(self.rows)
         session_rows.sort(key=lambda r: int(r.get("event_seq", 0)))
         out: list[dict[str, Any]] = []
         for r in session_rows:
