@@ -254,7 +254,13 @@ def load_rows(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
             ]
         else:
             payload = json.loads(path.read_text("utf-8"))
-            rows = payload if isinstance(payload, list) else payload.get("samples", [])
+            if isinstance(payload, list):
+                rows = payload
+            elif isinstance(payload, dict):
+                # Support both 'samples' (legacy) and 'records' (vc_generator output) keys.
+                rows = payload.get("samples") or payload.get("records", [])
+            else:
+                rows = []
         columns = list(rows[0].keys()) if rows else []
         return rows, columns
 

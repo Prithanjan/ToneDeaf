@@ -21,10 +21,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { ActionBanner } from './components/ActionBanner';
 import { ConsentNotice } from './components/ConsentNotice';
+import { PrivacyInspector } from './components/PrivacyInspector';
 import { RiskTimeline } from './components/RiskTimeline';
 import { SessionSetup } from './components/SessionSetup';
 import type { SessionSetupValues } from './components/SessionSetup';
-import { createSession, createStreamTicket, fetchVersion, streamUrl } from './lib/api';
+import { createSession, createStreamTicket, fetchSessionAudit, fetchVersion, streamUrl } from './lib/api';
 import { getAccessToken, isDemoIssuer } from './lib/auth';
 import type { CaptureSession } from './lib/capture';
 import { openStream } from './lib/stream';
@@ -88,6 +89,7 @@ export function App(): ReactElement {
   const [detectorMode, setDetectorMode] = useState<DetectorMode | undefined>(undefined);
   const [artifactState, setArtifactState] = useState<ArtifactState | undefined>(undefined);
   const [bufferCleared, setBufferCleared] = useState(false);
+  const [isInspectorOpen, setIsInspectorOpen] = useState(false);
 
   const captureRef = useRef<CaptureSession | null>(null);
   const streamRef = useRef<StreamController | null>(null);
@@ -95,6 +97,11 @@ export function App(): ReactElement {
   const demoIssuer = isDemoIssuer();
   const mockMode = (detectorMode ?? version?.detector_mode) === 'MOCK_SMOKE_MODE_NOT_A_DETECTOR';
   const effectiveArtifactState = artifactState ?? session?.artifact_state ?? version?.artifact_state;
+
+  const handleFetchAudit = useCallback(async (sessionId: string) => {
+    const accessToken = await getAccessToken();
+    return fetchSessionAudit(accessToken, sessionId);
+  }, []);
 
   /**
    * The parity set is read before anything else so `detector_mode` and `artifact_state` are on screen
@@ -268,6 +275,18 @@ export function App(): ReactElement {
               capture: <span className="vi-code">scriptprocessor</span>
             </li>
           ) : null}
+          <li>
+            <button
+              type="button"
+              className={styles.inspectorButton}
+              onClick={() => {
+                setIsInspectorOpen(true);
+              }}
+              aria-label="Open Privacy Inspector & Cryptographic Proof"
+            >
+              🛡️ Privacy Inspector
+            </button>
+          </li>
         </ul>
       </header>
 
@@ -395,6 +414,19 @@ export function App(): ReactElement {
           it does not measure fraud and no fraud-reduction claim is made from it.
         </p>
       </footer>
+
+      <PrivacyInspector
+        isOpen={isInspectorOpen}
+        onClose={() => {
+          setIsInspectorOpen(false);
+        }}
+        session={session}
+        version={version}
+        bufferCleared={bufferCleared}
+        phase={phase}
+        auditEventId={auditEventId}
+        onFetchAudit={handleFetchAudit}
+      />
     </div>
   );
 }

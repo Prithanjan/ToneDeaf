@@ -1,0 +1,132 @@
+{
+  "manifest_format_version": "1.0.0",
+  "release_id": "sih26104-phase4-v1",
+  "release_name": "ToneDeaf Voice Integrity Control Plane — Phase 4 Release",
+  "created_at": "2026-08-28T20:00:00Z",
+  "project": "SIH26104 / ToneDeaf",
+  "aws_account": "075213340955",
+  "aws_region": "ap-south-1",
+  "git": {
+    "commit": "aa3f3b41355431cd942d3371276733905c7496bc",
+    "ref": "main",
+    "repository": "Prithanjan/ToneDeaf",
+    "tags": []
+  },
+
+  "model_artifacts": [
+    {
+      "artifact_id": "aasist_onnx_v1",
+      "description": "AASIST anti-spoofing model — ONNX Runtime opset 17 graph",
+      "path": "ml/models/aasist.onnx",
+      "sha256": "45d6eefefcf7db52cf8c3548a796d114392212935822b9cac8c1cfa451a48505",
+      "git_tracked": false,
+      "note": "Model weights are gitignored (rules.md R-42). SHA is verified at startup via R-45 env guard."
+    },
+    {
+      "artifact_id": "calibration_fixture_v1",
+      "description": "Platt calibration state — contract_vector_v1.npy (slope=1.0, intercept=0.0)",
+      "path": "ml/fixtures/contract_vector_v1.npy",
+      "sha256": "008a60f3bc4b16d8e3e342b55c0f8a5eaa72752e84bd44040c750425b0d6b6cb",
+      "git_tracked": true
+    }
+  ],
+
+  "contracts": [
+    {
+      "artifact_id": "grpc_contract_v1",
+      "description": "gRPC contract — voice_scorer.proto defining VoiceScorer.ScoreAudio RPC",
+      "path": "contracts/voice_scorer.proto",
+      "sha256": "2e286d1269262aa686275838b7e38f06c098d2c28f5eccb47a475b22076483d5",
+      "git_tracked": true
+    }
+  ],
+
+  "docker_images": [
+    {
+      "image_id": "scorer_cpu",
+      "ecr_repository": "075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-cpu",
+      "tag": "latest",
+      "digest": "sha256:227e61a61241928959fbf7e770f7ca5f9f5483e55b96890e0e791481a0a8e85d",
+      "base": "python:3.11-slim",
+      "onnxruntime_version": "1.20.0",
+      "execution_provider": "CPUExecutionProvider",
+      "note": "Promoted by digest only (rules.md R-56). Desired capacity = 0 during cost-hold."
+    },
+    {
+      "image_id": "scorer_gpu",
+      "ecr_repository": "075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-gpu",
+      "tag": "latest",
+      "digest": "sha256:227e61a61241928959fbf7e770f7ca5f9f5483e55b96890e0e791481a0a8e85d",
+      "base": "nvidia/cuda:12.4.1-runtime-ubuntu22.04",
+      "onnxruntime_version": "1.20.0",
+      "execution_provider": "CUDAExecutionProvider",
+      "note": "GPU image built but not deployed (Fargate Spot CPU tier active per memory.md §15)."
+    },
+    {
+      "image_id": "gateway",
+      "ecr_repository": "075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/gateway",
+      "tag": "latest",
+      "digest": "sha256:3ad2461176b5a08f7d42b9daf281085c9fa558ab7e304bd1a4ca29f213885b07",
+      "base": "python:3.11-slim",
+      "note": "FastAPI + WebSocket gateway forwarding WSS to gRPC scorer via Cloud Map."
+    }
+  ],
+
+  "datasets": [
+    {
+      "artifact_id": "vc_robustness_manifest_v1",
+      "description": "Voice Conversion + Codec Robustness held-out evaluation manifest (D-09 compliant)",
+      "path": "datasets/manifest/vc_robustness.manifest.json",
+      "record_count": 80,
+      "split_breakdown": {
+        "dev_calibration": 40,
+        "eval_codec_language_heldout": 20,
+        "eval_generator_heldout": 20
+      },
+      "generator_split_disjointness": {
+        "dev_calibration": ["none", "so-vits-svc"],
+        "eval_codec_language_heldout": ["none", "so-vits-svc"],
+        "eval_generator_heldout": ["none", "rvc"]
+      },
+      "validate_manifest_exit": 0,
+      "validate_manifest_errors": 0,
+      "validate_manifest_warnings": 2,
+      "warning_detail": "eval_locked and train splits empty (expected for Phase 4 dev eval manifest)"
+    }
+  ],
+
+  "ci_runs": [
+    {
+      "workflow": "scorer-ci",
+      "run_id": "33179835101",
+      "status": "success",
+      "jobs": ["lint", "unit-tests", "build-push-scorer-cpu", "build-push-scorer-gpu", "privacy-check", "contract-check", "secret-scan"]
+    }
+  ],
+
+  "score_contract": {
+    "description": "Score inversion and Platt calibration parameters",
+    "score_inversion": "score = -output[:, 1:2]  (higher positive value = higher spoof probability)",
+    "platt_calibration": "risk = 1 / (1 + exp(-(slope * raw_score + intercept)))",
+    "slope": 1.0,
+    "intercept": 0.0,
+    "threshold_hold": 0.5,
+    "threshold_reject": 0.8
+  },
+
+  "privacy_controls": {
+    "raw_audio_in_database": false,
+    "audit_event_schema": "hmac_session_id, score, policy_action, model_sha256, timestamp_utc",
+    "database_verify_script": "scripts/verify_database_privacy.py",
+    "database_verify_self_test_passed": true,
+    "checks_passed": 6
+  },
+
+  "pwa_components": [
+    {
+      "component": "PrivacyInspector",
+      "path": "pwa/src/components/PrivacyInspector.tsx",
+      "description": "Judge-facing cryptographic proof panel: volatile memory lifecycle, HMAC pseudonymization, SHA-256 parity grid, session audit chain verifier"
+    }
+  ]
+}

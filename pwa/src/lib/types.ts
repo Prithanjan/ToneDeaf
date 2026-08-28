@@ -151,11 +151,56 @@ export interface VersionInfo {
   git_commit: string;
   deployment_profile: DeploymentProfile;
   execution_provider?: string;
+  api_schema_sha256?: string;
+  proto_sha256?: string;
   policy_version?: string;
+  policy_bundle_sha256?: string;
   model_version?: string;
+  model_sha256?: string;
   calibration_version?: string;
+  calibration_sha256?: string;
+  migration_head?: string;
   detector_mode?: DetectorMode;
   artifact_state: ArtifactState;
+}
+
+/** Feature-only audit event record from `GET /api/v1/sessions/{id}/audit`. */
+export interface AuditEventRecord {
+  event_id: string;
+  tenant_id?: string;
+  session_id: string;
+  call_ref: string;
+  event_seq: number;
+  occurred_at: string;
+  purpose_code: PurposeCode;
+  context_value_band: ContextValueBand;
+  window_seq: number | null;
+  spoof_risk: number | null;
+  risk_state: RiskState;
+  action: Action;
+  reason_code: ReasonCode | string;
+  policy_version: string;
+  policy_bundle_sha256: string;
+  model_version: string;
+  model_sha256: string;
+  calibration_version: string;
+  calibration_sha256: string;
+  quality_flags: QualityFlag[];
+  detector_mode: DetectorMode | string;
+  execution_provider: string;
+  deployment_profile: DeploymentProfile | string;
+  prev_event_hash: string;
+  event_hash: string;
+  retention_expires_at: string;
+}
+
+/** Verification and chained event listing response from `GET /api/v1/sessions/{id}/audit`. */
+export interface SessionAuditResponse {
+  session_id: string;
+  chain_verified: boolean;
+  first_divergent_event_seq: number | null;
+  events: AuditEventRecord[];
+  phase_note?: string;
 }
 
 // --- WSS messages --------------------------------------------------------------------------------

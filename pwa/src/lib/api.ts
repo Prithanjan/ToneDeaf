@@ -18,11 +18,16 @@
  */
 
 import type {
+  Action,
   ArtifactState,
+  AuditEventRecord,
   ContextValueBand,
   CreateSessionResponse,
   DetectorMode,
   PurposeCode,
+  QualityFlag,
+  RiskState,
+  SessionAuditResponse,
   StreamTicketResponse,
   VersionInfo,
 } from './types';
@@ -167,10 +172,118 @@ export async function fetchVersion(): Promise<VersionInfo> {
     deployment_profile: profile,
     artifact_state: artifactState,
     execution_provider: stringOrUndefined(record['execution_provider']),
+    api_schema_sha256: stringOrUndefined(record['api_schema_sha256']),
+    proto_sha256: stringOrUndefined(record['proto_sha256']),
     policy_version: stringOrUndefined(record['policy_version']),
+    policy_bundle_sha256: stringOrUndefined(record['policy_bundle_sha256']),
     model_version: stringOrUndefined(record['model_version']),
+    model_sha256: stringOrUndefined(record['model_sha256']),
     calibration_version: stringOrUndefined(record['calibration_version']),
+    calibration_sha256: stringOrUndefined(record['calibration_sha256']),
+    migration_head: stringOrUndefined(record['migration_head']),
     detector_mode: readDetectorMode(record['detector_mode']),
+  };
+}
+
+/**
+ * Fetch the chained, feature-only audit log for a session and verify its hash continuity.
+ */
+export async function fetchSessionAudit(
+  accessToken: string,
+  sessionId: string,
+): Promise<SessionAuditResponse> {
+  const path = `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/audit`;
+  const body = await requestJson(path, {
+    method: 'GET',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (typeof body !== 'object' || body === null) throw new ApiError('MALFORMED_RESPONSE');
+  const record = body as Record<string, unknown>;
+  const returnedSessionId = record['session_id'];
+  const chainVerified = record['chain_verified'];
+  const eventsRaw = record['events'];
+
+  if (typeof returnedSessionId !== 'string' || typeof chainVerified !== 'boolean' || !Array.isArray(eventsRaw)) {
+    throw new ApiError('MALFORMED_RESPONSE');
+  }
+
+  const events: AuditEventRecord[] = [];
+  for (const item of eventsRaw) {
+    if (typeof item !== 'object' || item === null) continue;
+    const e = item as Record<string, unknown>;
+    const eventId = e['event_id'];
+    const sessId = e['session_id'];
+    const callRef = e['call_ref'];
+    const eventSeq = e['event_seq'];
+    const occurredAt = e['occurred_at'];
+    const purposeCode = e['purpose_code'];
+    const contextValueBand = e['context_value_band'];
+    const riskState = e['risk_state'];
+    const action = e['action'];
+    const reasonCode = e['reason_code'];
+    const policyVersion = e['policy_version'];
+    const prevEventHash = e['prev_event_hash'];
+    const eventHash = e['event_hash'];
+    const retentionExpiresAt = e['retention_expires_at'];
+
+    if (
+      typeof eventId !== 'string' ||
+      typeof sessId !== 'string' ||
+      typeof callRef !== 'string' ||
+      typeof eventSeq !== 'number' ||
+      typeof occurredAt !== 'string' ||
+      typeof purposeCode !== 'string' ||
+      typeof contextValueBand !== 'string' ||
+      typeof riskState !== 'string' ||
+      typeof action !== 'string' ||
+      typeof reasonCode !== 'string' ||
+      typeof policyVersion !== 'string' ||
+      typeof prevEventHash !== 'string' ||
+      typeof eventHash !== 'string' ||
+      typeof retentionExpiresAt !== 'string'
+    ) {
+      continue;
+    }
+
+    events.push({
+      event_id: eventId,
+      tenant_id: stringOrUndefined(e['tenant_id']),
+      session_id: sessId,
+      call_ref: callRef,
+      event_seq: eventSeq,
+      occurred_at: occurredAt,
+      purpose_code: purposeCode as PurposeCode,
+      context_value_band: contextValueBand as ContextValueBand,
+      window_seq: typeof e['window_seq'] === 'number' ? e['window_seq'] : null,
+      spoof_risk: typeof e['spoof_risk'] === 'number' ? e['spoof_risk'] : null,
+      risk_state: riskState as RiskState,
+      action: action as Action,
+      reason_code: reasonCode,
+      policy_version: policyVersion,
+      policy_bundle_sha256: typeof e['policy_bundle_sha256'] === 'string' ? e['policy_bundle_sha256'] : '',
+      model_version: typeof e['model_version'] === 'string' ? e['model_version'] : '',
+      model_sha256: typeof e['model_sha256'] === 'string' ? e['model_sha256'] : '',
+      calibration_version: typeof e['calibration_version'] === 'string' ? e['calibration_version'] : '',
+      calibration_sha256: typeof e['calibration_sha256'] === 'string' ? e['calibration_sha256'] : '',
+      quality_flags: Array.isArray(e['quality_flags']) ? (e['quality_flags'] as QualityFlag[]) : [],
+      detector_mode: typeof e['detector_mode'] === 'string' ? e['detector_mode'] : '',
+      execution_provider: typeof e['execution_provider'] === 'string' ? e['execution_provider'] : '',
+      deployment_profile: typeof e['deployment_profile'] === 'string' ? e['deployment_profile'] : '',
+      prev_event_hash: prevEventHash,
+      event_hash: eventHash,
+      retention_expires_at: retentionExpiresAt,
+    });
+  }
+
+  return {
+    session_id: returnedSessionId,
+    chain_verified: chainVerified,
+    first_divergent_event_seq:
+      typeof record['first_divergent_event_seq'] === 'number' ? record['first_divergent_event_seq'] : null,
+    events,
+    phase_note: stringOrUndefined(record['phase_note']),
   };
 }
 
