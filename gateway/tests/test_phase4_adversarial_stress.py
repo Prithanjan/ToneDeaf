@@ -35,6 +35,7 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -574,47 +575,48 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
         else:
             assert detail == "Not Found"
 
-    def test_audit_endpoint_valid_retrieval(self) -> None:
+    @pytest.mark.asyncio
+    async def test_audit_endpoint_valid_retrieval(self) -> None:
         """Verify successful audit trail retrieval via GET /api/v1/sessions/{session_id}/audit."""
         app, record, registry, audit = _make_app()
         session_id = str(record.session_id)
 
-        async def _seed() -> None:
-            for seq in range(3):
-                await audit.append(
-                    session_id,
-                    {
-                        "tenant_id": "demo-tenant",
-                        "session_id": session_id,
-                        "call_ref": CALL_REF,
-                        "occurred_at": datetime.now(tz=UTC),
-                        "purpose_code": PURPOSE,
-                        "context_value_band": BAND,
-                        "window_seq": seq,
-                        "spoof_risk": 0.05,
-                        "risk_state": "collecting",
-                        "action": "continue",
-                        "reason_code": "INSUFFICIENT_ELIGIBLE_WINDOWS",
-                        "policy_version": "0.1.0",
-                        "policy_bundle_sha256": "0" * 64,
-                        "model_version": "mock-v1",
-                        "model_sha256": "0" * 64,
-                        "calibration_version": "0.1.0",
-                        "calibration_sha256": "0" * 64,
-                        "quality_flags": [],
-                        "detector_mode": "REAL_DETECTOR",
-                        "execution_provider": "CPUExecutionProvider",
-                        "deployment_profile": "local-cpu",
-                    },
-                )
+        # Seed 3 audit events
+        for seq in range(3):
+            await audit.append(
+                session_id,
+                {
+                    "tenant_id": "demo-tenant",
+                    "session_id": session_id,
+                    "call_ref": CALL_REF,
+                    "occurred_at": datetime.now(tz=UTC),
+                    "purpose_code": PURPOSE,
+                    "context_value_band": BAND,
+                    "window_seq": seq,
+                    "spoof_risk": 0.05,
+                    "risk_state": "collecting",
+                    "action": "continue",
+                    "reason_code": "INSUFFICIENT_ELIGIBLE_WINDOWS",
+                    "policy_version": "0.1.0",
+                    "policy_bundle_sha256": "0" * 64,
+                    "model_version": "mock-v1",
+                    "model_sha256": "0" * 64,
+                    "calibration_version": "0.1.0",
+                    "calibration_sha256": "0" * 64,
+                    "quality_flags": [],
+                    "detector_mode": "REAL_DETECTOR",
+                    "execution_provider": "CPUExecutionProvider",
+                    "deployment_profile": "local-cpu",
+                },
+            )
 
-        asyncio.run(_seed())
-
-        client = TestClient(app)
-        resp = client.get(
-            f"/api/v1/sessions/{session_id}/audit",
-            headers={"authorization": "Bearer valid-token"},
-        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/v1/sessions/{session_id}/audit",
+                headers={"authorization": "Bearer valid-token"},
+            )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == session_id
@@ -622,50 +624,51 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
         assert payload["first_divergent_event_seq"] is None
         assert len(payload["events"]) == 3
 
-    def test_audit_endpoint_tampered_detection(self) -> None:
+    @pytest.mark.asyncio
+    async def test_audit_endpoint_tampered_detection(self) -> None:
         """Verify audit endpoint reports chain_verified=False and identifies first bad seq on tampered rows."""
         app, record, registry, audit = _make_app()
         session_id = str(record.session_id)
 
-        async def _seed() -> None:
-            for seq in range(4):
-                await audit.append(
-                    session_id,
-                    {
-                        "tenant_id": "demo-tenant",
-                        "session_id": session_id,
-                        "call_ref": CALL_REF,
-                        "occurred_at": datetime.now(tz=UTC),
-                        "purpose_code": PURPOSE,
-                        "context_value_band": BAND,
-                        "window_seq": seq,
-                        "spoof_risk": 0.05,
-                        "risk_state": "collecting",
-                        "action": "continue",
-                        "reason_code": "INSUFFICIENT_ELIGIBLE_WINDOWS",
-                        "policy_version": "0.1.0",
-                        "policy_bundle_sha256": "0" * 64,
-                        "model_version": "mock-v1",
-                        "model_sha256": "0" * 64,
-                        "calibration_version": "0.1.0",
-                        "calibration_sha256": "0" * 64,
-                        "quality_flags": [],
-                        "detector_mode": "REAL_DETECTOR",
-                        "execution_provider": "CPUExecutionProvider",
-                        "deployment_profile": "local-cpu",
-                    },
-                )
-
-        asyncio.run(_seed())
+        # Seed 4 audit events
+        for seq in range(4):
+            await audit.append(
+                session_id,
+                {
+                    "tenant_id": "demo-tenant",
+                    "session_id": session_id,
+                    "call_ref": CALL_REF,
+                    "occurred_at": datetime.now(tz=UTC),
+                    "purpose_code": PURPOSE,
+                    "context_value_band": BAND,
+                    "window_seq": seq,
+                    "spoof_risk": 0.05,
+                    "risk_state": "collecting",
+                    "action": "continue",
+                    "reason_code": "INSUFFICIENT_ELIGIBLE_WINDOWS",
+                    "policy_version": "0.1.0",
+                    "policy_bundle_sha256": "0" * 64,
+                    "model_version": "mock-v1",
+                    "model_sha256": "0" * 64,
+                    "calibration_version": "0.1.0",
+                    "calibration_sha256": "0" * 64,
+                    "quality_flags": [],
+                    "detector_mode": "REAL_DETECTOR",
+                    "execution_provider": "CPUExecutionProvider",
+                    "deployment_profile": "local-cpu",
+                },
+            )
 
         # Tamper row at index 2
         audit.rows[2]["action"] = "escalate"
 
-        client = TestClient(app)
-        resp = client.get(
-            f"/api/v1/sessions/{session_id}/audit",
-            headers={"authorization": "Bearer valid-token"},
-        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/v1/sessions/{session_id}/audit",
+                headers={"authorization": "Bearer valid-token"},
+            )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == session_id
