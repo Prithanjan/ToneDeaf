@@ -207,16 +207,52 @@ class MockAuditStore:
         out: list[dict[str, Any]] = []
         for r in session_rows:
             prev = r["prev_event_hash"]
-            prev_hex = prev.hex() if isinstance(prev, (bytes, bytearray)) else str(prev)
+            prev_hex = prev.hex() if isinstance(prev, (bytes, bytearray, memoryview)) else str(prev)
             curr = r["event_hash"]
-            curr_hex = curr.hex() if isinstance(curr, (bytes, bytearray)) else str(curr)
-            row_dict = {**r, "prev_event_hash": prev_hex, "event_hash": curr_hex}
-            if isinstance(row_dict.get("occurred_at"), datetime):
-                row_dict["occurred_at"] = row_dict["occurred_at"].isoformat()
-            if isinstance(row_dict.get("retention_expires_at"), datetime):
-                row_dict["retention_expires_at"] = row_dict["retention_expires_at"].isoformat()
-            if isinstance(row_dict.get("event_id"), UUID):
-                row_dict["event_id"] = str(row_dict["event_id"])
+            curr_hex = curr.hex() if isinstance(curr, (bytes, bytearray, memoryview)) else str(curr)
+
+            occurred = r.get("occurred_at")
+            occurred_str = occurred.isoformat() if hasattr(occurred, "isoformat") else str(occurred)
+
+            retention = r.get("retention_expires_at")
+            retention_str = (
+                retention.isoformat() if hasattr(retention, "isoformat") else str(retention)
+            )
+
+            spoof_risk = r.get("spoof_risk")
+            spoof_risk_val = float(spoof_risk) if spoof_risk is not None else None
+
+            window_seq = r.get("window_seq")
+            window_seq_val = int(window_seq) if window_seq is not None else None
+
+            row_dict = {
+                "event_id": str(r.get("event_id")),
+                "tenant_id": str(r.get("tenant_id")),
+                "session_id": str(r.get("session_id")),
+                "call_ref": str(r.get("call_ref")),
+                "event_seq": int(r.get("event_seq", 0)),
+                "occurred_at": occurred_str,
+                "purpose_code": str(r.get("purpose_code")),
+                "context_value_band": str(r.get("context_value_band")),
+                "window_seq": window_seq_val,
+                "spoof_risk": spoof_risk_val,
+                "risk_state": str(r.get("risk_state")),
+                "action": str(r.get("action")),
+                "reason_code": str(r.get("reason_code")),
+                "policy_version": str(r.get("policy_version")),
+                "policy_bundle_sha256": str(r.get("policy_bundle_sha256")),
+                "model_version": str(r.get("model_version")),
+                "model_sha256": str(r.get("model_sha256")),
+                "calibration_version": str(r.get("calibration_version")),
+                "calibration_sha256": str(r.get("calibration_sha256")),
+                "quality_flags": list(r.get("quality_flags") or []),
+                "detector_mode": str(r.get("detector_mode")),
+                "execution_provider": str(r.get("execution_provider")),
+                "deployment_profile": str(r.get("deployment_profile")),
+                "prev_event_hash": prev_hex,
+                "event_hash": curr_hex,
+                "retention_expires_at": retention_str,
+            }
             out.append(row_dict)
         return out
 
