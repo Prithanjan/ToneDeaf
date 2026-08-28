@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Phase 4 Adversarial Stress Test Suite (SIH26104 / ToneDeaf).
 
 Covers all 3 adversarial stress testing scopes:
@@ -39,16 +40,26 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
-sys.path.insert(0, str(REPO_ROOT / "gateway"))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / "gateway") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "gateway"))
+if str(REPO_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+from fastapi import FastAPI
+from scripts.verify_database_privacy import (
+    EXACT_ALLOW_LIST_26,
+    check_1_schema_deny_list,
+    check_2_data_row_inspection,
+    check_3_cryptographic_hash_chain,
+)
 
 from app.audio.ring import VoicedRingBuffer
-from app.audit.chain import CHAIN_FIELDS, chain_events, event_hash
+from app.audit.chain import chain_events, event_hash
 from app.constants import (
     GENESIS_PREV_HASH,
-    MAX_TEXT_FRAME_BYTES,
     SAMPLES_PER_FRAME,
-    WS_FRAME_BYTES,
     WS_SUBPROTOCOL,
     WS_TICKET_SUBPROTOCOL_PREFIX,
 )
@@ -57,14 +68,11 @@ from app.security.jwt import AuthError, Principal
 from app.security.ticket import ReplayCache, TicketClaims, sign
 from app.session_registry import SessionRegistry
 from app.ws import stream as ws_stream
-from fastapi import FastAPI
-from scripts.verify_database_privacy import (
-    EXACT_ALLOW_LIST_26,
-    check_1_schema_deny_list,
-    check_2_data_row_inspection,
-    check_3_cryptographic_hash_chain,
-)
-from tests.conftest import TEST_CHAIN_KEY, TEST_TICKET_KEY, make_frame
+
+try:
+    from .conftest import TEST_CHAIN_KEY, TEST_TICKET_KEY, make_frame
+except ImportError:
+    from tests.conftest import TEST_CHAIN_KEY, TEST_TICKET_KEY, make_frame
 
 ALLOWED_ORIGIN = "https://demo.example.invalid"
 OWNER_SUB = "adversary-tester-1"

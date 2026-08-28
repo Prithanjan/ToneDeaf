@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Unit and Contract Tests for Database 3-Check Privacy Verification.
 
 Verifies that:
@@ -18,11 +19,13 @@ from typing import Any
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO_ROOT / "scripts"))
-sys.path.insert(0, str(REPO_ROOT / "gateway"))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+if str(REPO_ROOT / "gateway") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "gateway"))
+if str(REPO_ROOT / "scripts") not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-from app.audit.chain import chain_events, event_hash
-from app.constants import GENESIS_PREV_HASH
 from scripts.verify_database_privacy import (
     EXACT_ALLOW_LIST_26,
     check_1_schema_deny_list,
@@ -30,6 +33,8 @@ from scripts.verify_database_privacy import (
     check_3_cryptographic_hash_chain,
     run_self_test,
 )
+
+from app.audit.chain import chain_events
 
 TEST_CHAIN_KEY = b"test-key-for-privacy-verification-0"
 
