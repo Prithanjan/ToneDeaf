@@ -61,6 +61,26 @@
   border-color: var(--vi-state-uncertain-border);
 }
 
+.inspectorButton {
+  display: inline-flex;
+  gap: var(--vi-space-1);
+  align-items: center;
+  padding: var(--vi-space-1) var(--vi-space-3);
+  font-size: var(--vi-text-xs);
+  font-weight: var(--vi-weight-semibold);
+  border: var(--vi-border-width) solid var(--vi-action-continue-border);
+  border-radius: var(--vi-radius-full);
+  color: var(--vi-action-continue-fg);
+  background-color: var(--vi-action-continue-bg);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.inspectorButton:hover {
+  filter: brightness(1.15);
+  box-shadow: var(--vi-shadow-sm);
+}
+
 .main {
   display: grid;
   gap: var(--vi-space-5);
@@ -110,6 +130,13 @@
   max-width: none; /* physical: see `.label` in `ActionBanner.module.css` */
 }
 
+.actionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--vi-space-3);
+  align-items: center;
+}
+
 .stop {
   justify-self: start;
   min-block-size: var(--vi-touch-min);
@@ -119,6 +146,24 @@
   background-color: var(--vi-surface-raised);
   border: var(--vi-border-width-strong) solid var(--vi-border-strong);
   border-radius: var(--vi-radius-md);
+  cursor: pointer;
+}
+
+.restart {
+  justify-self: start;
+  min-block-size: var(--vi-touch-min);
+  padding: var(--vi-space-3) var(--vi-space-5);
+  font-weight: var(--vi-weight-semibold);
+  color: #f4f4f5;
+  background-color: #27272a;
+  border: var(--vi-border-width-strong) solid #3f3f46;
+  border-radius: var(--vi-radius-md);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.restart:hover {
+  background-color: #3f3f46;
 }
 
 .ended {

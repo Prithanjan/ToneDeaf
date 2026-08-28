@@ -136,6 +136,22 @@ export function App(): ReactElement {
   // React tree is a recording indicator with nothing behind it.
   useEffect(() => teardown, [teardown]);
 
+  const resetSession = useCallback(() => {
+    teardown();
+    setSession(null);
+    setWindows([]);
+    setRiskState('collecting');
+    setAction(null);
+    setReasonCode(null);
+    setAuditEventId(undefined);
+    setEvidenceWindowCount(undefined);
+    setEvidenceHighCount(undefined);
+    setStreamStatus(null);
+    setBufferCleared(false);
+    setFailure(null);
+    setPhase('setup');
+  }, [teardown]);
+
   const handleEvent = useCallback((event: ServerEvent) => {
     switch (event.type) {
       case 'session.accepted':
@@ -367,25 +383,35 @@ export function App(): ReactElement {
                 </p>
               )}
 
-              {phase === 'live' ? (
+              <div className={styles.actionGroup}>
+                {phase === 'live' ? (
+                  <button
+                    type="button"
+                    className={styles.stop}
+                    onClick={() => {
+                      teardown();
+                      setPhase('ended');
+                    }}
+                  >
+                    Stop the microphone and end the session
+                  </button>
+                ) : (
+                  <p className={styles.ended}>
+                    The microphone is closed.{' '}
+                    {bufferCleared
+                      ? 'The Gateway reported its audio buffer was cleared.'
+                      : 'No audio was written to storage at any point.'}
+                  </p>
+                )}
+
                 <button
                   type="button"
-                  className={styles.stop}
-                  onClick={() => {
-                    teardown();
-                    setPhase('ended');
-                  }}
+                  className={styles.restart}
+                  onClick={resetSession}
                 >
-                  Stop the microphone and end the session
+                  🔄 Start New Session / Test Again
                 </button>
-              ) : (
-                <p className={styles.ended}>
-                  The microphone is closed.{' '}
-                  {bufferCleared
-                    ? 'The Gateway reported its audio buffer was cleared.'
-                    : 'No audio was written to storage at any point.'}
-                </p>
-              )}
+              </div>
             </section>
           </>
         ) : null}
