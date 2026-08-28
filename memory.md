@@ -1888,3 +1888,16 @@ For a cold pickup. Ordered by what unblocks the most.
    - Created `pwa/src/lib/telephony_bridge.ts` (`TelephonyFarEndCaptureSession`).
    - Isolates channel 1 (remote far-end caller audio) from 2-channel WebRTC / SIP call streams via Web Audio `ChannelSplitterNode`.
    - Automatically mutes local operator microphone audio (channel 0) so the Gateway and AASIST model score strictly the caller on the other end of the line hands-free.
+
+---
+
+## 18. Live AWS ECS Fargate Fleet Scaling & Target Health Verification (2026-08-28)
+
+1. **ECS Services Scaled to 1**:
+   - `scorer-cpu` task `d7d834cabfac4237a1b9979731f13e4b` running AASIST ONNX model on Fargate (`10.42.7.125:50051`).
+   - `gateway` task `24d86c2cb41b47ef90b08aec1c1b67a6` running FastAPI WebSocket engine on Fargate (`10.42.9.7:8080`).
+
+2. **ALB Target Group Health Verified**:
+   - `aws elbv2 describe-target-health` returned `State: healthy` on target IP `10.42.9.7:8080`.
+   - Gateway connected to Scorer over AWS Service Discovery `scorer.sih26104.local:50051`.
+   - Ready for live audio stream scoring (cloned voice vs human ground-truth audio test).
