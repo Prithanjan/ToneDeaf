@@ -13,6 +13,7 @@ export function AudioVisualizer({ isLive, onStartSimulatedTest }: AudioVisualize
   const [permissionState, setPermissionState] = useState<'granted' | 'prompt' | 'denied' | 'unknown'>('unknown');
   const [micVolume, setMicVolume] = useState<number>(0);
   const [isAudioDetected, setIsAudioDetected] = useState<boolean>(false);
+  const [peakFreqHz, setPeakFreqHz] = useState<number>(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -47,6 +48,7 @@ export function AudioVisualizer({ isLive, onStartSimulatedTest }: AudioVisualize
       }
       setMicVolume(0);
       setIsAudioDetected(false);
+      setPeakFreqHz(0);
       return;
     }
 
@@ -69,7 +71,8 @@ export function AudioVisualizer({ isLive, onStartSimulatedTest }: AudioVisualize
         audioCtxRef.current = ctx;
         const source = ctx.createMediaStreamSource(micStream);
         const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
+        analyser.fftSize = 512;
+        analyser.smoothingTimeConstant = 0.8;
         analyserRef.current = analyser;
         source.connect(analyser);
 
@@ -82,27 +85,70 @@ export function AudioVisualizer({ isLive, onStartSimulatedTest }: AudioVisualize
           analyser.getByteFrequencyData(dataArray);
 
           let sum = 0;
-          for (const val of dataArray) {
+          let maxVal = 0;
+          let maxIndex = 0;
+
+          for (let i = 0; i < dataArray.length; i += 1) {
+            const val = dataArray[i] ?? 0;
             sum += val;
+            if (val > maxVal) {
+              maxVal = val;
+              maxIndex = i;
+            }
           }
+
           const avg = sum / dataArray.length;
           const normalizedVolume = Math.min(100, Math.round((avg / 128) * 100));
           setMicVolume(normalizedVolume);
-          setIsAudioDetected(normalizedVolume > 8);
+          setIsAudioDetected(normalizedVolume > 6);
 
+          // Calculate peak frequency Hz
+          const nyquist = ctx.sampleRate / 2;
+          const peakHz = Math.round((maxIndex / dataArray.length) * nyquist);
+          setPeakFreqHz(normalizedVolume > 6 ? peakHz : 0);
+
+          // Draw High-Res FFT Spectrogram / Frequency Spectrum Canvas
           if (canvas !== null && canvasCtx !== undefined && canvasCtx !== null) {
-            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-            canvasCtx.fillStyle = '#09090b';
-            canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+            const width = canvas.width;
+            const height = canvas.height;
 
-            const barWidth = (canvas.width / dataArray.length) * 1.5;
+            canvasCtx.fillStyle = '#09090b';
+            canvasCtx.fillRect(0, 0, width, height);
+
+            // Draw radar grid lines
+            canvasCtx.strokeStyle = '#18181b';
+            canvasCtx.lineWidth = 1;
+
+            // Grid horizontals
+            for (let y = 0; y < height; y += 15) {
+              canvasCtx.beginPath();
+              canvasCtx.moveTo(0, y);
+              canvasCtx.lineTo(width, y);
+              canvasCtx.stroke();
+            }
+
+            // Grid verticals (Frequency markers: 0Hz, 2kHz, 4kHz, 8kHz)
+            for (let x = 0; x < width; x += width / 4) {
+              canvasCtx.beginPath();
+              canvasCtx.moveTo(x, 0);
+              canvasCtx.lineTo(x, height);
+              canvasCtx.stroke();
+            }
+
+            // Draw FFT Frequency Bars
+            const barWidth = (width / dataArray.length) * 1.2;
             let x = 0;
 
             for (const val of dataArray) {
-              const barHeight = (val / 255) * canvas.height;
-              const hue = 140 - (val / 255) * 100;
-              canvasCtx.fillStyle = `hsl(${hue.toString()}, 80%, 50%)`;
-              canvasCtx.fillRect(x, canvas.height - barHeight, barWidth - 1, barHeight);
+              const barHeight = (val / 255) * height;
+              // High-tech emerald to cyan gradient
+              const intensity = val / 255;
+              const r = Math.round(16 + intensity * 40);
+              const g = Math.round(160 + intensity * 95);
+              const b = Math.round(120 + intensity * 135);
+
+              canvasCtx.fillStyle = `rgb(${r.toString()}, ${g.toString()}, ${b.toString()})`;
+              canvasCtx.fillRect(x, height - barHeight, barWidth - 1, barHeight);
               x += barWidth;
             }
           }
@@ -174,23 +220,40 @@ export function AudioVisualizer({ isLive, onStartSimulatedTest }: AudioVisualize
         ) : null}
       </div>
 
-      {/* Live Audio Visualizer & Level Meter */}
+      {/* Live FFT Spectrogram Visualizer & Level Meter */}
       {isLive ? (
         <div className={styles.meterPanel}>
           <div className={styles.meterHeader}>
-            <span className={styles.meterTitle}>LIVE AUDIO OSCILLOSCOPE</span>
+            <div className={styles.titleGroup}>
+              <span className={styles.meterTitle}>LIVE AUDIO SPECTROGRAM & FREQUENCY SPECTRUM</span>
+              {peakFreqHz > 0 ? (
+                <span className={styles.freqBadge}>PEAK: {peakFreqHz.toString()} Hz</span>
+              ) : null}
+            </div>
             <span className={isAudioDetected ? styles.audioActiveBadge : styles.audioIdleBadge}>
               {isAudioDetected ? 'VOICE DETECTED 🎙️' : 'SILENT / QUIET'}
             </span>
           </div>
 
           <div className={styles.visualizerRow}>
-            <canvas ref={canvasRef} width={280} height={40} className={styles.canvas} />
+            <div className={styles.canvasContainer}>
+              <canvas ref={canvasRef} width={420} height={60} className={styles.canvas} />
+              <div className={styles.freqAxis}>
+                <span>0Hz</span>
+                <span>2kHz</span>
+                <span>4kHz</span>
+                <span>8kHz</span>
+              </div>
+            </div>
+
             <div className={styles.vuMeterColumn}>
+              <div className={styles.vuHeader}>
+                <span className={styles.vuTitle}>RMS VOLUME</span>
+                <span className={styles.vuLabel}>{micVolume.toString()}%</span>
+              </div>
               <div className={styles.vuTrack}>
                 <div className={styles.vuFill} style={{ width: `${micVolume.toString()}%` }} />
               </div>
-              <span className={styles.vuLabel}>{micVolume.toString()}% Level</span>
             </div>
           </div>
         </div>

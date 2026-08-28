@@ -7,8 +7,8 @@
 }
 
 .statusBanner {
-  background-color: var(--vi-color-panel-bg);
-  border: 1px solid var(--vi-color-border-subtle);
+  background-color: #09090b;
+  border: 1px solid #27272a;
   border-radius: var(--vi-radius-md);
   padding: var(--vi-space-3) var(--vi-space-4);
 }
@@ -57,7 +57,7 @@
 
 .statusTitle {
   font-size: var(--vi-font-size-sm);
-  color: var(--vi-color-text);
+  color: #f4f4f5;
 }
 
 .blockedNotice {
@@ -101,22 +101,39 @@
 .meterPanel {
   background-color: #09090b;
   border: 1px solid #27272a;
-  border-radius: var(--vi-radius-md);
-  padding: var(--vi-space-3) var(--vi-space-4);
+  border-radius: var(--vi-radius-lg);
+  padding: var(--vi-space-4);
 }
 
 .meterHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--vi-space-2);
+  margin-bottom: var(--vi-space-3);
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--vi-space-3);
 }
 
 .meterTitle {
   font-size: var(--vi-font-size-xs);
   font-family: var(--vi-font-mono);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: #a1a1aa;
+
+}
+
+.freqBadge {
+  font-size: 11px;
+  font-family: var(--vi-font-mono);
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
 }
 
 .audioActiveBadge {
@@ -124,7 +141,7 @@
   font-family: var(--vi-font-mono);
   color: #4ade80;
   background-color: rgba(34, 197, 94, 0.1);
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid rgba(34, 197, 94, 0.3);
 }
@@ -134,32 +151,76 @@
   font-family: var(--vi-font-mono);
   color: #71717a;
   background-color: rgba(113, 113, 122, 0.1);
-  padding: 2px 6px;
+  padding: 2px 8px;
   border-radius: 4px;
 }
 
 .visualizerRow {
   display: flex;
-  align-items: center;
-  gap: var(--vi-space-4);
+  flex-direction: column;
+  gap: var(--vi-space-3);
 }
 
-.canvas {
-  border: 1px solid #27272a;
-  border-radius: 4px;
-  background-color: #09090b;
+@media (min-width: 640px) {
+  .visualizerRow {
+    flex-direction: row;
+    align-items: flex-end;
+  }
 }
 
-.vuMeterColumn {
+.canvasContainer {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
+.canvas {
+  width: 100%;
+  height: 60px;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  background-color: #09090b;
+}
+
+.freqAxis {
+  display: flex;
+  justify-content: space-between;
+  padding-inline: 4px;
+  font-size: 10px;
+  font-family: var(--vi-font-mono);
+  color: #52525b;
+}
+
+.vuMeterColumn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+@media (min-width: 640px) {
+  .vuMeterColumn {
+    width: 140px;
+  }
+}
+
+.vuHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vuTitle {
+  font-size: 10px;
+  font-family: var(--vi-font-mono);
+  color: #71717a;
+}
+
 .vuTrack {
-  height: 8px;
-  background-color: #27272a;
+  height: 10px;
+  background-color: #18181b;
+  border: 1px solid #27272a;
   border-radius: 4px;
   overflow: hidden;
 }
@@ -171,8 +232,7 @@
 }
 
 .vuLabel {
-  font-size: var(--vi-font-size-xs);
+  font-size: 11px;
   font-family: var(--vi-font-mono);
-  color: #a1a1aa;
-  text-align: right;
+  color: #f4f4f5;
 }

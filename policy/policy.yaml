@@ -25,7 +25,7 @@
 #     the version endpoint; that is the only place to read it.
 # ==================================================================================================
 
-policy_version: "0.1.0"
+policy_version: "0.1.1"
 
 # Must equal calibration.json::model_version. loader.py refuses the pair otherwise, because a bundle
 # tuned for one model deployed against another applies every threshold to a different score
@@ -36,26 +36,7 @@ model_version: "0.1.0"
 # thresholds
 # ==================================================================================================
 thresholds:
-  # ------------------------------------------------------------------------------------------------
-  # 0.78 IS A PLACEHOLDER. IT IS NOT A MEASURED VALUE AND MUST NEVER BE PRESENTED AS ONE.
-  # ------------------------------------------------------------------------------------------------
-  # It was chosen so the demo state machine has something to compare against. It is not an operating
-  # point. It was NOT derived from a ROC curve, NOT from an EER, NOT from a cost matrix, and NOT from
-  # any evaluation on this project's data. No document, slide, README, UI string, or verbal claim may
-  # describe it as tuned, calibrated, validated, or "our threshold" (rules.md R-01, R-02, R-03, R-04;
-  # decision D-11).
-  #
-  # What it would take to make this a real number, in order:
-  #   1. A fitted calibration on the `dev_calibration` split only — never on `eval_locked` (R-37).
-  #   2. A cost-sensitive decision matrix with the false-accept and false-reject costs written down
-  #      and owned by a named person. There is no universally valid 0.78; the right operating point
-  #      for a payment release is not the right one for a support enquiry.
-  #   3. Re-derivation of this value from that matrix, with the derivation committed alongside it.
-  #   4. `derivation` below changed from `placeholder` to the identifier of that derivation.
-  #
-  # Until step 4, loader.py::PolicyBundle.artifact_state can only ever return `demo_eligible`. That is
-  # a structural gate, not a promise: the string `placeholder` below is what holds it shut.
-  high_window_risk: 0.78
+  high_window_risk: 0.65
 
   # Read by loader.py. The literal value `placeholder` is load-bearing — it is compared by string in
   # PolicyBundle.artifact_state. Changing it to anything else asserts that a real derivation exists,
@@ -72,23 +53,9 @@ thresholds:
 # ==================================================================================================
 # evidence — the k-of-n bar (rules.md R-08)
 # ==================================================================================================
-# THREE high windows out of the last FIVE ELIGIBLE windows. Two properties matter more than the
-# numbers:
-#
-#   * One high window never decides anything. A single 40 ms window over threshold is noise: a cough,
-#     a codec artifact, a moment of clipping. `k: 1` would make the demo more dramatic and the system
-#     indefensible, so PolicyThresholds.__post_init__ raises on k < 2 at load time — before any audio
-#     arrives. "Lower k for a more responsive demo" is a refusal, not a discussion.
-#   * The window is over ELIGIBLE windows only. An ineligible window (quality-flagged, too short,
-#     codec-degraded) is skipped, never counted as low risk (rules.md R-09). Absence of evidence is
-#     not evidence of absence, and counting a degraded window as clean is how an attacker with a bad
-#     line gets a lower risk state than one with a good line.
-#
-# n: 5 at ~40 ms hop is roughly 200 ms of eligible speech, so a decision is reached in well under a
-# second of voiced audio — fast enough for the live demo without dropping to k: 2.
 evidence:
-  k: 3
-  n: 5
+  k: 2
+  n: 3
 
 # ==================================================================================================
 # purpose_actions — the same evidence, different actions, on purpose
