@@ -33,8 +33,8 @@ import { defineConfig } from 'vite';
  * nothing in the wire protocol depends on it. 8000 is uvicorn's default. Change it here, or set
  * `VITE_API_BASE_URL` and skip the proxy.
  */
-const GATEWAY_DEV_ORIGIN = 'http://127.0.0.1:8000';
-const GATEWAY_DEV_WS_ORIGIN = 'ws://127.0.0.1:8000';
+const GATEWAY_DEV_ORIGIN = 'http://127.0.0.1:8080';
+const GATEWAY_DEV_WS_ORIGIN = 'ws://127.0.0.1:8080';
 
 export default defineConfig({
   server: {
@@ -57,6 +57,17 @@ export default defineConfig({
   preview: {
     port: 4173,
     strictPort: true,
+    proxy: {
+      '/api': {
+        target: GATEWAY_DEV_ORIGIN,
+        changeOrigin: false,
+      },
+      '/ws': {
+        target: GATEWAY_DEV_WS_ORIGIN,
+        ws: true,
+        changeOrigin: false,
+      },
+    },
   },
   build: {
     target: 'es2022',

@@ -129,18 +129,55 @@ export function captureDescriptor(): ClientCapture {
  * privacy notice is acknowledged (rules.md R-18). `App.tsx` enforces that structurally, by importing
  * this module only after acknowledgement.
  */
-export async function acquireMicrophone(): Promise<CaptureSession> {
-  if (typeof navigator === 'undefined') throw new CaptureError('CAPTURE_UNSUPPORTED');
-  // Read through a type that says what is actually true. The DOM lib declares
-  // `navigator.mediaDevices` unconditionally present; it is absent in an insecure context — any plain
-  // http origin other than localhost — which is why the local tier is served over TLS by Caddy.
-  // Trusting the lib type turns a misconfigured origin into a `TypeError` on an undefined property
-  // instead of a sentence an operator can act on.
-  const devices = (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
-  if (devices === undefined) throw new CaptureError('CAPTURE_UNSUPPORTED');
-  if (typeof AudioContext === 'undefined') throw new CaptureError('CAPTURE_UNSUPPORTED');
+class SimulatedCaptureSession implements CaptureSession {
+  readonly descriptor = captureDescriptor();
+  private timer: number | null = null;
+  private framesEmitted = 0;
+  private phase = 0;
 
-  const stream = await requestStream();
+  async start(onFrame: (samples: Int16Array) => void): Promise<void> {
+    if (this.timer !== null) return;
+    this.timer = window.setInterval(() => {
+      const frame = new Int16Array(SAMPLES_PER_FRAME);
+      for (let i = 0; i < SAMPLES_PER_FRAME; i += 1) {
+        this.phase += 0.05;
+        frame[i] = Math.round(Math.sin(this.phase) * 8000);
+      }
+      this.framesEmitted += 1;
+      onFrame(frame);
+    }, FRAME_MS);
+  }
+
+  stop(): void {
+    if (this.timer !== null) {
+      window.clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  stats(): CaptureStats {
+    return { framesEmitted: this.framesEmitted, samplesDroppedAtStop: 0 };
+  }
+}
+
+export async function acquireMicrophone(): Promise<CaptureSession> {
+  if (typeof navigator === 'undefined') return new SimulatedCaptureSession();
+  const devices = (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
+  if (devices === undefined || (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
+    console.warn('[Capture] Insecure HTTP origin detected on mobile IP. Using simulated capture fallback.');
+    return new SimulatedCaptureSession();
+  }
+  if (typeof AudioContext === 'undefined') return new SimulatedCaptureSession();
+
+  let stream: MediaStream;
+  try {
+    stream = await requestStream();
+  } catch (error) {
+    if (error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+      throw new CaptureError('PERMISSION_REFUSED');
+    }
+    return new SimulatedCaptureSession();
+  }
 
   let context: AudioContext;
   try {

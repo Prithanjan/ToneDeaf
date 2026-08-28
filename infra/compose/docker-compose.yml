@@ -66,6 +66,8 @@ services:
     image: sih26104/gateway:local
     container_name: sih26104-gateway
     restart: unless-stopped
+    ports:
+      - "8080:8080"
     env_file:
       - .env
     environment:
