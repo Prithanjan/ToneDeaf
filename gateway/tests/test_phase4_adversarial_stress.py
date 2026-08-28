@@ -157,11 +157,15 @@ class MockAuditStore:
         self.forgotten: list[str] = []
 
     async def append(self, session_id: str, fields: Mapping[str, Any]) -> tuple[UUID, int]:
+        sid = str(session_id).strip().lower()
         async with self.lock:
-            seq = len([r for r in self.rows if str(r.get("session_id")) == session_id])
+            seq = len([r for r in self.rows if str(r.get("session_id")).strip().lower() == sid])
             prev = GENESIS_PREV_HASH
             for r in self.rows:
-                if str(r.get("session_id")) == session_id and r.get("event_seq") == seq - 1:
+                if (
+                    str(r.get("session_id")).strip().lower() == sid
+                    and r.get("event_seq") == seq - 1
+                ):
                     prev = r.get("event_hash")
                     break
 
@@ -187,13 +191,15 @@ class MockAuditStore:
     async def verify_session(self, session_id: str) -> tuple[bool, int | None]:
         from app.audit.chain import verify_chain
 
-        session_rows = [r for r in self.rows if str(r.get("session_id")) == session_id]
+        sid = str(session_id).strip().lower()
+        session_rows = [r for r in self.rows if str(r.get("session_id")).strip().lower() == sid]
         session_rows.sort(key=lambda r: int(r.get("event_seq", 0)))
         res = verify_chain(self.chain_key, session_rows)
         return res.ok, res.first_bad_event_seq
 
     async def fetch_session_events(self, session_id: str) -> list[dict[str, Any]]:
-        session_rows = [r for r in self.rows if str(r.get("session_id")) == session_id]
+        sid = str(session_id).strip().lower()
+        session_rows = [r for r in self.rows if str(r.get("session_id")).strip().lower() == sid]
         session_rows.sort(key=lambda r: int(r.get("event_seq", 0)))
         out: list[dict[str, Any]] = []
         for r in session_rows:
