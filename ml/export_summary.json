@@ -1,0 +1,13 @@
+{
+  "model_file": "aasist.onnx",
+  "model_sha256": "45d6eefefcf7db52cf8c3548a796d114392212935822b9cac8c1cfa451a48505",
+  "input_shape": [
+    1,
+    40960
+  ],
+  "output_shape": [
+    1,
+    1
+  ],
+  "max_diff": 6.258487701416016e-06
+}

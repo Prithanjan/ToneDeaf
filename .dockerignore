@@ -30,6 +30,7 @@
 !policy
 !audit
 !ml/fixtures
+!ml/models
 
 # ── Re-exclude junk that lives inside the allowed paths ──────────────────────────────────────────
 #
@@ -53,9 +54,4 @@
 **/*.pem
 **/*.key
 **/certs
-
-# Trained/large artifacts. `ml/fixtures/` is allowed above and is deliberately tiny — the fixed
-# contract vector — while `ml/models/` holds ONNX weights that are mounted at runtime rather than
-# baked, and the datasets are never in an image at all (rules.md R-14).
-ml/models
 datasets

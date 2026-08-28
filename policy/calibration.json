@@ -1,35 +1,30 @@
 {
   "WARNING": "PLACEHOLDER. THIS IS NOT A FITTED CALIBRATION. The Platt parameters below are the identity transform, so applying this artifact changes no score by any amount. No document, slide, UI string, log line, or spoken claim may describe spoof_risk as a probability, a likelihood, or a confidence while status is placeholder-not-policy-eligible (rules.md R-11). See policy/README.md and the Calibration gate in evaluation/reports/.",
-
   "calibration_version": "0.0.0-placeholder-identity",
   "status": "placeholder-not-policy-eligible",
-
   "model_version": "0.1.0",
-  "model_sha256": "",
+  "model_sha256": "45d6eefefcf7db52cf8c3548a796d114392212935822b9cac8c1cfa451a48505",
   "model_sha256_note": "Empty because no ONNX artifact has been paired yet. contracts/voice_scorer.proto requires HealthResponse.model_sha256 to match this field, and design.md 7 has the Scorer verify it against the loaded ONNX file at startup. Empty means 'no artifact to verify against', which is only permissible while status is placeholder-not-policy-eligible and detector_mode is a mock mode. The audit table enforces the pairing: ck_audit_event_real_detector_is_identified rejects any row where detector_mode = 'REAL_DETECTOR' and model_sha256 = '' (rules.md R-03, R-51).",
-
   "method": "platt",
   "fitted": false,
-
-  "slope": 1.0,
-  "intercept": 0.0,
+  "slope": 1,
+  "intercept": 0,
   "fitted_on": "dev_calibration",
   "scorer_loader_contract_note": "THESE FOUR TOP-LEVEL KEYS ARE WHAT THE SCORER READS, AND THEY ARE NOT THE `platt` BLOCK BELOW. Both tiers are pointed at this one file (CALIBRATION_PATH=/policy/calibration.json in infra/compose/docker-compose.yml:98 and :143, and in infra/cdk/lib/compute-stack.ts:347, :473, :678), but they read disjoint key sets. gateway/app/policy/loader.py:139 requires exactly calibration_version, status, model_version, model_sha256 — it never looks at a coefficient. scorer/app/calibration.py requires top-level status, method (which must be the literal \"platt\", not \"platt-scaling\"), slope, intercept, and fitted_on. Until these four keys existed this file loaded fine on the Gateway and was FATAL on the Scorer: scorer/app/server.py:201 falls back to the built-in placeholder only when the file does NOT exist, and Compose mounts ../../policy:/policy:ro into the Scorer as well, so the file existed, load_calibration ran, and raised CalibrationError. `docker compose up` could not bring up the Scorer. The Scorer's own docstring at server.py:195 still describes this file as 'empty in Phase 1', which was true when that code was written and stopped being true when this artifact was committed to the shared path.",
-
   "transform_divergence_note": "READ THIS BEFORE FITTING THE REAL CALIBRATION. The `platt.transform` string below and the transform the Scorer actually executes are DIFFERENT FUNCTIONS, and they disagree about what `raw_score` means. The string below reads sigmoid(a*logit(raw)+b), which treats raw as a PROBABILITY and round-trips it. scorer/app/calibration.py:121 computes sigmoid(slope*raw + intercept) with no logit(), which treats raw as a LOGIT — and that is deliberate on that side, not an oversight: scorer/app/model.py:60-72 documents that the mock emits a logit in +/-MOCK_LOGIT_RANGE (6.0) specifically so the transform is genuinely exercised, and names the exact failure the other reading causes ('a mock that emitted [0,1] pre-sigmoid would compress to [0.5, 0.73] after calibration and could never cross a 0.78 threshold'). That failure is not hypothetical: under the probability reading the highest attainable spoof_risk is sigmoid(1*1.0+0) = 0.7310585786, the window threshold at gateway/app/policy/engine.py:158 is 0.78, so the `high` band — and therefore the `hold` and `escalate` actions, i.e. the entire product function — would be structurally unreachable. The Scorer's reading is the operative one. THE REASON NOBODY CAUGHT THIS: (1.0, 0.0) is the one point in parameter space where both conventions produce the same two numbers while meaning different things, so audit/tests/test_policy_bundle.py:406 could prove the identity claim arithmetically true under the formula it reimplements in the test body, and the Scorer's suite could prove its own transform correct, and both suites pass without ever contradicting each other. A FITTED pair will not be so forgiving: coefficients fitted under one convention and applied under the other produce a plausible, monotone, wrong curve with no error anywhere. Fit against sigmoid(slope*raw_logit + intercept), the function scorer/app/calibration.py:121 implements. Tracked as memory.md H-6.",
-
   "fitted_on_is_structural_not_provenance_note": "`fitted_on` above says \"dev_calibration\" while `fit.fitted_on_split` below is null, and that is not a contradiction — the two keys answer different questions. The top-level `fitted_on` is a REQUIRED STRUCTURAL FIELD of the Scorer's loader, which refuses any value other than \"dev_calibration\" (scorer/app/calibration.py rejects both eval_locked and train by name under rules.md R-37, and then rejects anything that is not the permitted split, including null). There is no representation of 'not yet fitted' in that field, and scorer/tests/test_calibration.py:300-315 pins the intended shape by name: 'Pair B's Day-1 policy/calibration.json will carry the placeholder status with real-looking slope and intercept values. It must LOAD — otherwise the demo cannot run — and it must never make this service claim policy eligibility.' So eligibility is gated by `status` ALONE, and the coefficient fields are always structurally present. `fit.fitted_on_split` remains null because THAT is the provenance record, and no fit has happened. Do not 'reconcile' these by setting fit.fitted_on_split to a split name — that would assert a fit that never ran, in a file whose entire purpose is to prevent exactly that claim (rules.md R-11).",
-
   "platt": {
     "transform": "DECLARED, NOT EXECUTED — see transform_divergence_note above. Declared here: calibrated = 1 / (1 + exp(-(a * logit(raw_score) + b))). Actually executed by scorer/app/calibration.py:121: calibrated = 1 / (1 + exp(-(slope * raw_score + intercept))), reading the top-level slope/intercept keys, with no logit() and with raw_score interpreted as a logit. This block is retained because audit/tests/test_policy_bundle.py:394-413 asserts its contents, and because it records the convention the reliability metrics below will be computed under. It is NOT the input to the running service.",
-    "a": 1.0,
-    "b": 0.0,
+    "a": 1,
+    "b": 0,
     "is_identity": true,
     "identity_note": "a = 1.0 and b = 0.0 are the identity OF THE DECLARED TRANSFORM ONLY: sigmoid(logit(p)) = p. That scoping matters, and an earlier version of this note got it wrong. The claim 'raw_score == spoof_risk means no calibration has been applied' is FALSE in the running system, because the running system applies sigmoid(slope * raw + intercept) to a logit, so the placeholder yields spoof_risk = sigmoid(raw_score), not spoof_risk = raw_score. Do not use score equality as the placeholder fingerprint; it will never hold. THE SAFEGUARD THE ORIGINAL NOTE WAS REACHING FOR IS STILL REAL, AND IT IS STILL WORTH HAVING — a placeholder with plausible coefficients (say a = 1.7, b = -0.4) would silently alter every score with no consumer able to distinguish it from a fitted mapping by looking at the output. Under the operative transform the equivalent fingerprint is the COEFFICIENT PAIR, not the score relation: slope == 1.0 and intercept == 0.0 exactly means no calibration has been fitted, a genuinely fitted pair will essentially never land on exactly (1.0, 0.0), and unlike a score relation this is inspectable in the artifact itself and in the Scorer's startup banner without observing any traffic. NOTE HONESTLY that this is a weaker control than the original claimed to be: it is checkable at load time by a reader, but no code asserts it, whereas score equality would have been observable at every single window. Restoring that stronger property would require the Scorer to apply logit() first, which would make the `high` band unreachable (see transform_divergence_note). That trade is the open part of memory.md H-6.",
-    "clamp": [0.0, 1.0],
+    "clamp": [
+      0,
+      1
+    ],
     "clamp_note": "The Scorer clamps the output to [0,1] regardless of coefficients, because contracts/voice_scorer.proto declares spoof_risk in [0,1] and the audit column is numeric(5,4) with a CHECK on that range. A score outside the range would fail the audit write, which loses evidence for the window that was most anomalous."
   },
-
   "fit": {
     "fitted_on_split": null,
     "fitted_at": null,
@@ -40,7 +35,6 @@
     "split_note": "A calibration mapping is fitted on dev_calibration and NOTHING ELSE. eval_locked is opened once, at the end, to produce the number that gets reported; fitting anything on it — a model, a threshold, or this mapping — turns the held-out estimate into a training estimate, and the resulting figure is no longer evidence of generalisation (rules.md R-37). The failure is silent and unrecoverable: once eval_locked has informed a choice, no re-run of the same split restores its independence. fitted_on_split must record which split was actually used, and must never read eval_locked.",
     "grouping_note": "The fit split must be grouped by speaker, parent audio, and generator before augmentation, or a speaker's augmented variants land on both sides of the split and the calibration is fitted on data it was validated against (rules.md R-38). datasets/manifest/manifest.schema.json makes that grouping an explicit, required field rather than an assumption."
   },
-
   "reliability": {
     "expected_calibration_error": null,
     "brier_score": null,
@@ -49,7 +43,6 @@
     "reliability_curve": null,
     "null_note": "null, not 0.0, and not omitted. A zero here would read as perfectly calibrated — the single most misleading value this file could contain — and an omitted key would let a consumer treat a missing metric as a passing one. null forces a consumer to branch on 'not measured'. These fields are filled in by the Calibration gate report, from the dev_calibration split, in the same commit that sets fitted: true."
   },
-
   "eligibility": {
     "artifact_state_ceiling": "demo_eligible",
     "probability_language_permitted": false,
@@ -57,7 +50,6 @@
     "derived_by": "gateway/app/policy/loader.py::PolicyBundle.artifact_state",
     "gate_note": "These are statements of the current ceiling, not switches. loader.py DERIVES artifact_state from thresholds.derivation in policy.yaml and from the status field above; it does not read this block. An artifact cannot promote itself, which is why there is no 'policy_eligible: true' to set. design.md 7 additionally has the Scorer refuse to start in mock mode if a release manifest asserts policy_eligible."
   },
-
   "promotion_checklist": [
     "1. Fit Platt scaling on the dev_calibration split only, grouped by speaker / parent audio / generator hash BEFORE augmentation (rules.md R-37, R-38).",
     "2. Record fitted_on_split, fitted_at, n_samples, and the manifest_sha256 of the exact manifest used, so the fit is reproducible from the recorded inputs alone.",
@@ -67,6 +59,5 @@
     "6. Change status away from placeholder-not-policy-eligible ONLY after 1-5 and after the Calibration gate has passed. This string is the gate; nothing else holds it shut.",
     "7. Bump calibration_version. Its old value is already stamped into every audit row written so far, and those rows must remain attributable to the artifact that actually produced them (rules.md R-24)."
   ],
-
   "hash_discipline_note": "gateway/app/policy/loader.py hashes this file's raw bytes and stamps the digest into every audit row as calibration_sha256 and into GET /api/v1/version. Reformatting the JSON, reordering keys, or editing one of these note strings changes the digest and therefore shows up in the evidence as an artifact change. That is intended: this is a reviewed artifact, and a change to its bytes is a change to what was reviewed. Do not reformat it as a drive-by. This file does not contain its own hash, because it structurally cannot."
 }

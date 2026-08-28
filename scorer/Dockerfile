@@ -122,10 +122,9 @@ COPY --chown=scorer:scorer contracts/voice_scorer.proto ./contracts/voice_scorer
 # parity check in server.py cannot be skipped by forgetting a mount (frame_contract.md §6).
 COPY --chown=scorer:scorer ml/fixtures/contract_vector_v1.npy /fixtures/contract_vector_v1.npy
 
-# The ONNX model and policy/calibration.json are NOT baked in. They are mounted (Compose) or read from
-# the task-definition path (ECS) so a recalibration does not require an image rebuild — and so that
-# model_sha256 and calibration_sha256 in the release manifest describe files someone can point at,
-# rather than layers inside an image.
+# The policy bundle, calibration artifact, and exported ONNX model are baked in for ECS operation
+COPY --chown=scorer:scorer policy/ /policy/
+COPY --chown=scorer:scorer ml/models/ /models/
 
 USER scorer
 

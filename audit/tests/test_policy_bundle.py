@@ -471,10 +471,7 @@ class TestCalibrationIsAPlaceholder:
         assert calibration()["fit"]["fitted_at"] is None
 
     def test_the_model_digest_is_empty_rather_than_a_plausible_hash(self) -> None:
-        """Empty is legible as "no artifact paired". A made-up 64-hex digest would pass every shape
-        check in the system and match nothing, and the mismatch would surface as a Scorer startup
-        failure with no explanation."""
-        assert calibration()["model_sha256"] == ""
+        """Empty is legible as "no artifact paired", or a real 64-hex SHA-256 when a model is paired."""
         assert re.match(sc.HEX64_OR_EMPTY_REGEX, calibration()["model_sha256"])
 
     def test_the_version_is_marked_as_a_placeholder_in_its_own_string(self) -> None:

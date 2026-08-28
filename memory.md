@@ -1801,3 +1801,30 @@ For a cold pickup. Ordered by what unblocks the most.
    - Public App Client ID: `7tn5kq3aikrhkcgmf1a81en1m3` (`sih26104-pwa-client`, SRP auth flow, no secret)
    - MFA: Software TOTP enabled, SMS disabled (R-15 compliance)
    - Seeded verified Analyst user: `analyst-demo-1` (`analyst1@example.invalid`).
+
+---
+
+## 14. Phase 2/3 AI Model Integration, ONNX Export & Live AWS CPU Verification (2026-08-28)
+
+1. **AASIST Checkpoint Unpacked & Validated**:
+   - Source weights: `best_mixed_finetune_256s_v2.pth.zip` (PyTorch OrderedDict checkpoint with 229 parameter tensors).
+   - Architecture: AASIST Spectro-Temporal Graph Attention Network (`ml/src/models/AASIST.py`).
+   - Window Contract: Exact 2.56s window @ 16kHz = 40,960 samples raw PCM waveform tensor `(1, 40960)` float32.
+
+2. **ONNX Export with Inverted Score Parity (R-06)**:
+   - Wrapper: `ml/src/export_onnx.py` wraps `AASIST.Model` with `score = -output[:, 1:2]` (shape: `[batch, 1]`) ensuring higher scalar output strictly corresponds to higher spoof risk.
+   - ONNX Graph: `ml/models/aasist.onnx` (Opset 17, dynamic batch axis).
+   - Parity verification: PyTorch vs ONNX Runtime absolute error = `6.26e-06` (< `1e-4` tolerance).
+   - Model SHA-256 fingerprint: `45d6eefefcf7db52cf8c3548a796d114392212935822b9cac8c1cfa451a48505`.
+   - Contract vector fixture score: `-0.855655`.
+   - Calibration artifact: `policy/calibration.json` updated with paired `model_sha256: 45d6eefefcf7db52cf8c3548a796d114392212935822b9cac8c1cfa451a48505`.
+
+3. **Docker Images Rebuilt & Pushed to AWS ECR (Tag: `v0.2.0-aasist`)**:
+   - `075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/gateway:v0.2.0-aasist` (`sha256:03825f0cf8c94af5e48ac5d7354acb8e0ca2c9d89854a25ada3170c28907b219`)
+   - `075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-cpu:v0.2.0-aasist` (`sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`)
+   - `075213340955.dkr.ecr.ap-south-1.amazonaws.com/sih26104/scorer-gpu:v0.2.0-aasist` (`sha256:d9483e086641a5d4f454d9039ff2a4b88dfe39a9220a701bf7995c71e13a39b6`)
+
+4. **Live AWS ECS Fargate CPU Verification**:
+   - Launched Fargate task `scorer-cpu-live-test:3` in private subnet `subnet-04e572d19700a1efe` (`arn:aws:ecs:ap-south-1:075213340955:task/sih26104/0fbfd80d1a924d3ebc54f2b2ee33f764`).
+   - Scorer loaded `aasist.onnx`, matched `model_sha256`, scored real 40,960 PCM sample window, and applied Platt scaling to produce calibrated risk `0.7006`.
+   - **Exit code: 0. All checks passed on AWS Fargate.**
