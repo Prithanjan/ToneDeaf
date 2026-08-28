@@ -35,6 +35,7 @@ from typing import Any
 from urllib.parse import quote
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -525,7 +526,6 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
     async def test_audit_endpoint_valid_retrieval(self) -> None:
         """Verify successful audit trail retrieval via GET /api/v1/sessions/{session_id}/audit."""
         app, record, registry, audit = _make_app()
-        client = TestClient(app)
         session_id = str(record.session_id)
 
         # Seed 3 audit events
@@ -557,10 +557,13 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
                 },
             )
 
-        resp = client.get(
-            f"/api/v1/sessions/{session_id}/audit",
-            headers={"authorization": "Bearer valid-token"},
-        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/v1/sessions/{session_id}/audit",
+                headers={"authorization": "Bearer valid-token"},
+            )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == session_id
@@ -572,7 +575,6 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
     async def test_audit_endpoint_tampered_detection(self) -> None:
         """Verify audit endpoint reports chain_verified=False and identifies first bad seq on tampered rows."""
         app, record, registry, audit = _make_app()
-        client = TestClient(app)
         session_id = str(record.session_id)
 
         # Seed 4 audit events
@@ -607,10 +609,13 @@ class TestScope2GatewayAuditEndpointAndRowExtraction:
         # Tamper row at index 2
         audit.rows[2]["action"] = "escalate"
 
-        resp = client.get(
-            f"/api/v1/sessions/{session_id}/audit",
-            headers={"authorization": "Bearer valid-token"},
-        )
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                f"/api/v1/sessions/{session_id}/audit",
+                headers={"authorization": "Bearer valid-token"},
+            )
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["session_id"] == session_id
