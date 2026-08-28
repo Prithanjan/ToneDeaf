@@ -91,13 +91,16 @@ PURPOSE_ACTIONS: dict[str, dict[Any, Any]] = {
 
 def _now() -> int:
     import time
+
     return int(time.time())
 
 
 class _Secret:
     __slots__ = ("_value",)
+
     def __init__(self, value: bytes | str):
         self._value = value.decode() if isinstance(value, bytes) else value
+
     def get_secret_value(self) -> str:
         return self._value
 
@@ -111,6 +114,7 @@ class _MockTokenValidator:
 
 class _MockScorer:
     """Mock scorer that returns eligible low-risk scores."""
+
     def __init__(self, fail: bool = False):
         self.fail = fail
         self.call_count = 0
@@ -118,6 +122,7 @@ class _MockScorer:
     async def score_window(self, **_: object) -> Any:
         if self.fail:
             from app.scorer.client import ScorerUnavailable
+
             raise ScorerUnavailable("mock scorer failure")
         self.call_count += 1
         return SimpleNamespace(
@@ -180,6 +185,7 @@ class MockAuditStore:
 
     async def verify_session(self, session_id: str) -> tuple[bool, int | None]:
         from app.audit.chain import verify_chain
+
         session_rows = [r for r in self.rows if str(r.get("session_id")) == session_id]
         session_rows.sort(key=lambda r: int(r.get("event_seq", 0)))
         res = verify_chain(self.chain_key, session_rows)
@@ -198,7 +204,9 @@ class MockAuditStore:
         return out
 
 
-def _make_app(audit_store: MockAuditStore | None = None) -> tuple[FastAPI, Any, SessionRegistry, MockAuditStore]:
+def _make_app(
+    audit_store: MockAuditStore | None = None,
+) -> tuple[FastAPI, Any, SessionRegistry, MockAuditStore]:
     from gateway.app.api.v1.health import router as health_router
 
     app = FastAPI()
@@ -255,7 +263,9 @@ def _make_app(audit_store: MockAuditStore | None = None) -> tuple[FastAPI, Any, 
     return app, record, registry, audit
 
 
-def _make_ticket(record: Any, *, ttl: int = 60, sub: str = OWNER_SUB, session_id: str | None = None) -> str:
+def _make_ticket(
+    record: Any, *, ttl: int = 60, sub: str = OWNER_SUB, session_id: str | None = None
+) -> str:
     claims = TicketClaims(
         session_id=session_id or str(record.session_id),
         sub=sub,
@@ -410,7 +420,8 @@ class TestScope1GatewayStreamClosureAndBufferClearing:
             b"",  # 0 bytes
             b"\x00\x01\x02\x03",  # 4 bytes (missing payload)
             b"\xff" * 648,  # Corrupt sequence / payload values
-            struct.pack(">I", 999) + (b"\x00" * 644),  # Big-endian sequence (gap: starts at 999 != 0)
+            struct.pack(">I", 999)
+            + (b"\x00" * 644),  # Big-endian sequence (gap: starts at 999 != 0)
         ],
     )
     def test_corrupt_binary_frames_trigger_immediate_rejection_and_buffer_clear(
@@ -704,10 +715,7 @@ class TestScope3DatabasePrivacy3Checks:
         res = check_1_schema_deny_list(injected_schema)
         assert res.passed is False
         assert len(res.details) > 0
-        assert any(
-            forbidden_col["column_name"] in d or "Rule" in d
-            for d in res.details
-        )
+        assert any(forbidden_col["column_name"] in d or "Rule" in d for d in res.details)
 
     # --- Check 2: Adversarial Data Tampering ---
     @pytest.mark.parametrize(

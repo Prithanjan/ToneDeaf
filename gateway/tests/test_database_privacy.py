@@ -225,7 +225,10 @@ class TestCheck3CryptographicHashChain:
     def test_detects_reordered_rows(self) -> None:
         events = make_chained_events(4)
         # Swap event_seq of rows 1 and 2
-        events[1]["event_seq"], events[2]["event_seq"] = events[2]["event_seq"], events[1]["event_seq"]
+        events[1]["event_seq"], events[2]["event_seq"] = (
+            events[2]["event_seq"],
+            events[1]["event_seq"],
+        )
         res = check_3_cryptographic_hash_chain(TEST_CHAIN_KEY, events)
         assert not res.passed
         assert any("chain divergence" in d for d in res.details)
