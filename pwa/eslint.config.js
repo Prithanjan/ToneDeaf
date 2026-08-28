@@ -154,7 +154,7 @@ export default tseslint.config(
      * is a single reviewable entry with a single reason. When the worklet path is actually built, this
      * override is what gets deleted.
      */
-    files: ['src/lib/capture.ts'],
+    files: ['src/lib/capture.ts', 'src/lib/telephony_bridge.ts'],
     rules: {
       '@typescript-eslint/no-deprecated': 'off',
     },

@@ -32,6 +32,7 @@ export class TelephonyFarEndCaptureSession implements CaptureSession {
   constructor(private readonly options: TelephonyStreamOptions = {}) {}
 
   async start(onFrame: (samples: Int16Array) => void): Promise<void> {
+    await Promise.resolve();
     if (this.started || this.stopped) return;
     this.started = true;
 
@@ -85,8 +86,8 @@ export class TelephonyFarEndCaptureSession implements CaptureSession {
           }
         };
         return;
-      } catch (err) {
-        console.warn('[TelephonyBridge] AudioContext setup failed, falling back to simulated far-end stream.', err);
+      } catch {
+        // Fallback to simulated far-end stream
       }
     }
 

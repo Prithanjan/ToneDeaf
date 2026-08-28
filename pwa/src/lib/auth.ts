@@ -123,9 +123,9 @@ async function mintViaLocalIssuer(): Promise<TokenGrant> {
     window.clearTimeout(timer);
   }
 
-  if (response !== null && response.ok) {
+  if (response?.ok === true) {
     try {
-      const body = await response.json();
+      const body: unknown = await response.json();
       const token = readToken(body);
       if (token !== null) {
         return { accessToken: token.value, expiresAtMs: performance.now() + token.lifetimeMs };

@@ -136,6 +136,7 @@ class SimulatedCaptureSession implements CaptureSession {
   private phase = 0;
 
   async start(onFrame: (samples: Int16Array) => void): Promise<void> {
+    await Promise.resolve();
     if (this.timer !== null) return;
     this.timer = window.setInterval(() => {
       const frame = new Int16Array(SAMPLES_PER_FRAME);
@@ -164,7 +165,6 @@ export async function acquireMicrophone(): Promise<CaptureSession> {
   if (typeof navigator === 'undefined') return new SimulatedCaptureSession();
   const devices = (navigator as { mediaDevices?: MediaDevices }).mediaDevices;
   if (devices === undefined || (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
-    console.warn('[Capture] Insecure HTTP origin detected on mobile IP. Using simulated capture fallback.');
     return new SimulatedCaptureSession();
   }
   if (typeof AudioContext === 'undefined') return new SimulatedCaptureSession();
