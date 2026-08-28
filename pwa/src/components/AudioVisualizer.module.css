@@ -1,0 +1,178 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--vi-space-3);
+  margin-bottom: var(--vi-space-4);
+  font-family: var(--vi-font-sans);
+}
+
+.statusBanner {
+  background-color: var(--vi-color-panel-bg);
+  border: 1px solid var(--vi-color-border-subtle);
+  border-radius: var(--vi-radius-md);
+  padding: var(--vi-space-3) var(--vi-space-4);
+}
+
+.statusBanner[data-permission='granted'] {
+  border-color: rgba(34, 197, 94, 0.4);
+  background-color: rgba(34, 197, 94, 0.05);
+}
+
+.statusBanner[data-permission='denied'] {
+  border-color: rgba(239, 68, 68, 0.4);
+  background-color: rgba(239, 68, 68, 0.08);
+}
+
+.statusBanner[data-permission='prompt'] {
+  border-color: rgba(234, 179, 8, 0.4);
+  background-color: rgba(234, 179, 8, 0.05);
+}
+
+.statusHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--vi-space-2);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #a1a1aa;
+}
+
+.statusBanner[data-permission='granted'] .statusDot {
+  background-color: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.statusBanner[data-permission='denied'] .statusDot {
+  background-color: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+.statusBanner[data-permission='prompt'] .statusDot {
+  background-color: #eab308;
+}
+
+.statusTitle {
+  font-size: var(--vi-font-size-sm);
+  color: var(--vi-color-text);
+}
+
+.blockedNotice {
+  margin-top: var(--vi-space-3);
+  padding-top: var(--vi-space-3);
+  border-top: 1px solid rgba(239, 68, 68, 0.2);
+  font-size: var(--vi-font-size-sm);
+}
+
+.warningText {
+  color: #f87171;
+  margin-bottom: var(--vi-space-2);
+}
+
+.instructions {
+  margin: 0 0 var(--vi-space-3) var(--vi-space-4);
+  color: #d4d4d8;
+  line-height: 1.5;
+}
+
+.fallbackButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background-color: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: var(--vi-radius-md);
+  color: #f4f4f5;
+  font-weight: 600;
+  font-size: var(--vi-font-size-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.fallbackButton:hover {
+  background-color: #3f3f46;
+}
+
+.meterPanel {
+  background-color: #09090b;
+  border: 1px solid #27272a;
+  border-radius: var(--vi-radius-md);
+  padding: var(--vi-space-3) var(--vi-space-4);
+}
+
+.meterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--vi-space-2);
+}
+
+.meterTitle {
+  font-size: var(--vi-font-size-xs);
+  font-family: var(--vi-font-mono);
+  letter-spacing: 0.1em;
+  color: #a1a1aa;
+}
+
+.audioActiveBadge {
+  font-size: var(--vi-font-size-xs);
+  font-family: var(--vi-font-mono);
+  color: #4ade80;
+  background-color: rgba(34, 197, 94, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.audioIdleBadge {
+  font-size: var(--vi-font-size-xs);
+  font-family: var(--vi-font-mono);
+  color: #71717a;
+  background-color: rgba(113, 113, 122, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.visualizerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--vi-space-4);
+}
+
+.canvas {
+  border: 1px solid #27272a;
+  border-radius: 4px;
+  background-color: #09090b;
+}
+
+.vuMeterColumn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vuTrack {
+  height: 8px;
+  background-color: #27272a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vuFill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e 0%, #eab308 70%, #ef4444 100%);
+  transition: width 0.05s ease-out;
+}
+
+.vuLabel {
+  font-size: var(--vi-font-size-xs);
+  font-family: var(--vi-font-mono);
+  color: #a1a1aa;
+  text-align: right;
+}

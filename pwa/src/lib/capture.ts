@@ -129,7 +129,7 @@ export function captureDescriptor(): ClientCapture {
  * privacy notice is acknowledged (rules.md R-18). `App.tsx` enforces that structurally, by importing
  * this module only after acknowledgement.
  */
-class SimulatedCaptureSession implements CaptureSession {
+export class SimulatedCaptureSession implements CaptureSession {
   readonly descriptor = captureDescriptor();
   private timer: number | null = null;
   private framesEmitted = 0;

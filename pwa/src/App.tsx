@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { AudioVisualizer } from './components/AudioVisualizer';
 import { ActionBanner } from './components/ActionBanner';
 import { ConsentNotice } from './components/ConsentNotice';
 import { PrivacyInspector } from './components/PrivacyInspector';
@@ -27,6 +28,7 @@ import { SessionSetup } from './components/SessionSetup';
 import type { SessionSetupValues } from './components/SessionSetup';
 import { createSession, createStreamTicket, fetchSessionAudit, fetchVersion, streamUrl } from './lib/api';
 import { getAccessToken, isDemoIssuer } from './lib/auth';
+import { SimulatedCaptureSession } from './lib/capture';
 import type { CaptureSession } from './lib/capture';
 import { openStream } from './lib/stream';
 import type { StreamController, StreamStatus } from './lib/stream';
@@ -143,9 +145,6 @@ export function App(): ReactElement {
 
       case 'risk.event':
         setWindows((previous) => {
-          // Deduplicated by `window_seq`. A reconnect restarts the frame sequence, so the Gateway may
-          // re-score a window number this client already holds; keeping both would draw one moment
-          // twice and inflate the visible evidence.
           const index = previous.findIndex((held) => held.window_seq === event.window_seq);
           if (index === -1) return [...previous, event];
           const merged = [...previous];
@@ -165,13 +164,10 @@ export function App(): ReactElement {
         break;
 
       case 'session.closed':
-        // `buffer_cleared` is the Gateway asserting it zeroed the volatile PCM ring (rules.md R-14).
-        // Surfaced because an unverifiable privacy claim is worth less than a stated one.
         setBufferCleared(event.buffer_cleared);
         break;
 
       case 'error':
-        // Text comes from `stream.ts`'s own table via `StreamStatus.errorCode`; nothing to do here.
         break;
     }
   }, []);
@@ -179,16 +175,14 @@ export function App(): ReactElement {
   const handleStatus = useCallback((status: StreamStatus) => {
     setStreamStatus(status);
     if (status.phase === 'closed') {
-      // The socket is gone for good. Stop the microphone in the same turn: capture that outlives the
-      // stream is audio being taken with nowhere to send it.
       captureRef.current?.stop();
       captureRef.current = null;
       setPhase('ended');
     }
   }, []);
 
-  const startSession = useCallback(
-    async (values: SessionSetupValues): Promise<void> => {
+  const startSessionWithCapture = useCallback(
+    async (values: SessionSetupValues, forceSimulated = false): Promise<void> => {
       setBusy(true);
       setFailure(null);
 
@@ -196,23 +190,17 @@ export function App(): ReactElement {
       try {
         const accessToken = await getAccessToken();
 
-        /**
-         * Consent has been acknowledged, so the capture module may now be loaded. Order within this
-         * try matters twice over:
-         *
-         * - The microphone is acquired BEFORE the session is created, so a refused permission prompt
-         *   leaves no server-side session record and no retention clock running for a call that never
-         *   happened.
-         * - The stream ticket is minted by `openStream` AFTER the prompt has been answered. A ticket
-         *   minted first would spend its `TICKET_TTL_SECONDS` waiting on a browser dialog and fail the
-         *   handshake with `AUTH_TICKET_INVALID` (decision D-6).
-         */
-        const { acquireMicrophone } = await import('./lib/capture');
-        capture = await acquireMicrophone();
+        if (forceSimulated) {
+          capture = new SimulatedCaptureSession();
+        } else {
+          const { acquireMicrophone } = await import('./lib/capture');
+          capture = await acquireMicrophone();
+        }
 
-        // `values.clientCallRef` is used here and never stored. What comes back is the pseudonym.
         const created = await createSession(accessToken, values);
         setSession(created);
+
+        const activeCapture = capture;
 
         const controller = openStream({
           url: streamUrl(),
@@ -221,19 +209,17 @@ export function App(): ReactElement {
             call_ref: created.call_ref,
             purpose_code: created.purpose_code,
             context_value_band: created.context_value_band,
-            client_capture: capture.descriptor,
+            client_capture: activeCapture.descriptor,
           },
           mintTicket: () => createStreamTicket(accessToken, created.session_id),
           onEvent: handleEvent,
           onStatus: handleStatus,
         });
 
-        captureRef.current = capture;
+        captureRef.current = activeCapture;
         streamRef.current = controller;
 
-        // Frames start flowing now. `stream.send` drops anything that arrives before
-        // `session.accepted`, so nothing is queued while the handshake completes (rules.md R-20).
-        await capture.start((samples) => {
+        await activeCapture.start((samples) => {
           controller.send(samples);
         });
 
@@ -250,6 +236,23 @@ export function App(): ReactElement {
     },
     [handleEvent, handleStatus],
   );
+
+  const startSession = useCallback(
+    (values: SessionSetupValues) => startSessionWithCapture(values, false),
+    [startSessionWithCapture],
+  );
+
+  const startSimulatedSession = useCallback(() => {
+    void startSessionWithCapture(
+      {
+        clientCallRef: `demo-sim-${Date.now().toString(36)}`,
+        purposeCode: 'payment_release',
+        contextValueBand: 'unspecified',
+      },
+      true,
+    );
+  }, [startSessionWithCapture]);
+
 
   return (
     <div className={styles.shell}>
@@ -301,6 +304,8 @@ export function App(): ReactElement {
             mockMode={mockMode}
           />
         ) : null}
+
+        <AudioVisualizer isLive={phase === 'live'} onStartSimulatedTest={startSimulatedSession} />
 
         {phase === 'setup' ? (
           <SessionSetup
