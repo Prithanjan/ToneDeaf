@@ -207,7 +207,14 @@ class MockAuditStore:
             prev_hex = prev.hex() if isinstance(prev, (bytes, bytearray)) else str(prev)
             curr = r["event_hash"]
             curr_hex = curr.hex() if isinstance(curr, (bytes, bytearray)) else str(curr)
-            out.append({**r, "prev_event_hash": prev_hex, "event_hash": curr_hex})
+            row_dict = {**r, "prev_event_hash": prev_hex, "event_hash": curr_hex}
+            if isinstance(row_dict.get("occurred_at"), datetime):
+                row_dict["occurred_at"] = row_dict["occurred_at"].isoformat()
+            if isinstance(row_dict.get("retention_expires_at"), datetime):
+                row_dict["retention_expires_at"] = row_dict["retention_expires_at"].isoformat()
+            if isinstance(row_dict.get("event_id"), UUID):
+                row_dict["event_id"] = str(row_dict["event_id"])
+            out.append(row_dict)
         return out
 
 
